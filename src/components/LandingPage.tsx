@@ -168,7 +168,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           }`}
         >
           <Zap className="h-3.5 w-3.5" />
-          <span>ILMHUB • Professional Python 3 IDE</span>
+          <span>{`${t.appName} • ${t.tagline}`}</span>
         </div>
 
         <h1

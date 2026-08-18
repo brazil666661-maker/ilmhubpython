@@ -11,6 +11,15 @@
     scrollbar-width: none;  /* Firefox */
   }
 
+  .scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
   /* Custom subtle dark scrollbars */
   .scrollbar-thin::-webkit-scrollbar {
     width: 6px;
