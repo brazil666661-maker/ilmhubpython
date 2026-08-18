@@ -56,6 +56,9 @@ const DEFAULT_SETTINGS: AppSettings = {
 export default function App() {
   // Navigation View (IDE or Landing)
   const [currentView, setCurrentView] = useState<'ide' | 'landing'>('ide');
+  const [isCompactLayout, setIsCompactLayout] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 768 : false
+  );
 
   // App Settings & Theme & Language (Persisted)
   const [settings, setSettings] = useState<AppSettings>(() => {
@@ -196,6 +199,15 @@ export default function App() {
       document.documentElement.classList.remove('dark');
     }
   }, [settings]);
+
+  useEffect(() => {
+    const updateViewport = () => setIsCompactLayout(window.innerWidth < 768);
+    updateViewport();
+    window.addEventListener('resize', updateViewport);
+    return () => window.removeEventListener('resize', updateViewport);
+  }, []);
+
+  const effectiveTerminalPosition = isCompactLayout ? 'bottom' : settings.terminalPosition || 'bottom';
 
   // Startup health check & Pyodide runtime warmup
   useEffect(() => {
@@ -601,7 +613,7 @@ export default function App() {
   return (
     <div
       id="ilmhub-app-root"
-      className={`flex flex-col h-screen w-screen overflow-hidden font-sans transition-colors duration-150 ${
+      className={`flex flex-col h-dvh w-full max-w-full overflow-hidden font-sans transition-colors duration-150 ${
         theme === 'dark' ? 'bg-[#071A2F] text-slate-100' : 'bg-slate-100 text-slate-900'
       }`}
     >
@@ -625,12 +637,12 @@ export default function App() {
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenLanding={() => setCurrentView('landing')}
         currentFilename={activeFile.name}
-        terminalPosition={settings.terminalPosition || 'bottom'}
+        terminalPosition={effectiveTerminalPosition}
         onChangeTerminalPosition={handleChangeTerminalPosition}
       />
 
       {/* Main Workspace Area (Editor + Split Terminal) */}
-      <div ref={workspaceRef} className="flex flex-1 w-full overflow-hidden relative">
+      <div ref={workspaceRef} className="flex flex-1 w-full max-w-full min-h-0 overflow-hidden relative">
         {/* If Terminal is Maximized, render Terminal full overlay */}
         {isTerminalMaximized ? (
           <div className="flex-1 w-full h-full z-30">
@@ -656,17 +668,21 @@ export default function App() {
               pendingPrompt={pendingPrompt}
               settings={settings}
               language={language}
-              position={settings.terminalPosition || 'bottom'}
+              position={effectiveTerminalPosition}
               onChangePosition={handleChangeTerminalPosition}
             />
           </div>
-        ) : settings.terminalPosition === 'left' ? (
+        ) : effectiveTerminalPosition === 'left' ? (
           /* LEFT TERMINAL LAYOUT: Terminal on Left, Code on Right */
           <div className="flex flex-row flex-1 h-full w-full overflow-hidden min-w-0">
             {/* Left Terminal Panel */}
             <div
               style={{
-                width: isTerminalMinimized ? undefined : `${settings.terminalWidth || 460}px`,
+                width: isTerminalMinimized
+                  ? undefined
+                  : isCompactLayout
+                  ? '100%'
+                  : `${Math.min(settings.terminalWidth || 460, Math.max(260, (workspaceRef.current?.clientWidth || window.innerWidth) * 0.7))}px`,
               }}
               className={`h-full overflow-hidden shrink-0 ${isTerminalMinimized ? 'w-9' : ''}`}
             >
@@ -743,7 +759,7 @@ export default function App() {
               </div>
             </div>
           </div>
-        ) : settings.terminalPosition === 'right' ? (
+        ) : effectiveTerminalPosition === 'right' ? (
           /* RIGHT TERMINAL LAYOUT: Code on Left, Terminal on Right */
           <div className="flex flex-row flex-1 h-full w-full overflow-hidden min-w-0">
             {/* Left Code Area */}
@@ -795,7 +811,11 @@ export default function App() {
             {/* Right Terminal Panel */}
             <div
               style={{
-                width: isTerminalMinimized ? undefined : `${settings.terminalWidth || 460}px`,
+                width: isTerminalMinimized
+                  ? undefined
+                  : isCompactLayout
+                  ? '100%'
+                  : `${Math.min(settings.terminalWidth || 460, Math.max(260, (workspaceRef.current?.clientWidth || window.innerWidth) * 0.7))}px`,
               }}
               className={`h-full overflow-hidden shrink-0 ${isTerminalMinimized ? 'w-9' : ''}`}
             >
@@ -876,7 +896,11 @@ export default function App() {
             {/* Bottom Interactive Terminal */}
             <div
               style={{
-                height: isTerminalMinimized ? undefined : `${settings.terminalHeight || 280}px`,
+                height: isTerminalMinimized
+                  ? undefined
+                  : isCompactLayout
+                  ? `${Math.min(settings.terminalHeight || 280, Math.max(180, (workspaceRef.current?.clientHeight || window.innerHeight) * 0.35))}px`
+                  : `${settings.terminalHeight || 280}px`,
               }}
               className={`w-full overflow-hidden shrink-0 ${isTerminalMinimized ? 'h-8' : ''}`}
             >

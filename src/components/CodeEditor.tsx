@@ -201,7 +201,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
             : 'border-slate-200 bg-slate-100'
         }`}
       >
-        <div className="flex items-center space-x-1 overflow-x-auto scrollbar-none py-1">
+        <div className="flex items-center space-x-1 overflow-x-auto no-scrollbar py-1">
           {files.map((file) => {
             const isActive = file.id === activeFileId;
             const hasError = error && error.file === file.name;
