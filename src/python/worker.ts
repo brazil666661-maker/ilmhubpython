@@ -15,6 +15,7 @@ export function buildRunnerScript(options: {
   const { filename, stdinText } = options;
 
   return `
+import asyncio
 import builtins
 import io
 import os
@@ -60,7 +61,7 @@ class _ILMHUBInputWrapper:
         if self.index < len(self.lines):
             value = self.lines[self.index]
             self.index += 1
-            return value + '\n'
+            return value + '\\n'
         return ''
 
     def read(self):
@@ -68,7 +69,7 @@ class _ILMHUBInputWrapper:
         while self.index < len(self.lines):
             values.append(self.lines[self.index])
             self.index += 1
-        return '\n'.join(values)
+        return '\\n'.join(values)
 
 
 async def _ilmhub_input(prompt=''):
@@ -83,6 +84,11 @@ async def _ilmhub_input(prompt=''):
         return '' if value is None else str(value)
     return ''
 
+
+def _ilmhub_sync_input(prompt=''):
+    loop = asyncio.get_event_loop()
+    return loop.run_until_complete(_ilmhub_input(prompt))
+
 stdout_buffer = _ILMHUBStream('stdout')
 stderr_buffer = _ILMHUBStream('stderr')
 _orig_stdout = sys.stdout
@@ -94,16 +100,13 @@ sys.stderr = stderr_buffer
 sys.stdin = _ILMHUBInputWrapper(stdin_lines)
 
 _builtins_input = builtins.input
-builtins.input = _ilmhub_input
-
-with open('/workspace/${filename}', 'r', encoding='utf-8') as _f:
-    _source = _f.read()
+builtins.input = _ilmhub_sync_input
 
 _user_globals = {
     '__name__': '__main__',
     '__file__': '/workspace/${filename}',
     '__doc__': None,
-    'input': _ilmhub_input,
+    'input': _ilmhub_sync_input,
     'print': print,
 }
 
@@ -111,7 +114,10 @@ _ilmhub_exit_code = 0
 _ilmhub_traceback = ''
 
 try:
-    exec(compile(_source, '${filename}', 'exec', dont_inherit=True), _user_globals, _user_globals)
+    user_code = globals().get('user_code', '')
+    if not isinstance(user_code, str):
+        user_code = ''
+    exec(compile(user_code, '${filename}', 'exec', dont_inherit=True), _user_globals, _user_globals)
 except SystemExit as _e:
     _ilmhub_exit_code = _e.code if _e.code is not None else 0
     if isinstance(_ilmhub_exit_code, str):
@@ -283,6 +289,7 @@ async function runPython(payload: any, messageId?: string) {
 
     const safeSourceCode = sanitizePythonCode(targetCode);
     py.FS.writeFile(`/workspace/${filename}`, safeSourceCode, { encoding: 'utf8' });
+    py.globals.set('user_code', safeSourceCode);
 
     const runnerScript = buildRunnerScript({ filename, stdinText });
 
