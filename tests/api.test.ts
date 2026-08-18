@@ -45,7 +45,7 @@ print(text)
     it('runner script handles single-quoted strings', () => {
       const testCode = "print('single quoted string')";
       const script = buildRunnerScript({ filename: 'test.py', stdinText: '' });
-      expect(script).toContain("builtins.input = _ilmhub_sync_input");
+      expect(script).toContain("builtins.input = _ilmhub_blocking_input");
     });
 
     it('runner script handles double-quoted strings', () => {
@@ -104,8 +104,8 @@ print(text)
       const stdinText = 'Alice\nBob\nCharlie';
       const script = buildRunnerScript({ filename: 'test.py', stdinText });
       expect(script).toContain('stdin_lines = ' + JSON.stringify(stdinText));
-      expect(script).toContain('def _ilmhub_sync_input(prompt=\'\')');
-      expect(script).toContain('builtins.input = _ilmhub_sync_input');
+      expect(script).toContain('def _ilmhub_blocking_input(prompt=');
+      expect(script).toContain('builtins.input = _ilmhub_blocking_input');
     });
 
     it('runner script maintains stdout/stderr capture independent of code patterns', () => {

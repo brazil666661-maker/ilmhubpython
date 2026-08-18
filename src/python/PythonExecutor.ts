@@ -38,6 +38,12 @@ class PythonExecutorEngine {
   private runtimeVersion = 'Python 3.x';
   private workerReadyPromise: Promise<void> | null = null;
 
+  // Shared buffers for true blocking input via Atomics
+  private sharedSignalBuffer: SharedArrayBuffer | null = null;
+  private sharedDataBuffer: SharedArrayBuffer | null = null;
+  private sharedSignal: Int32Array | null = null;
+  private sharedData: Uint8Array | null = null;
+
   public onInputRequest(listener: (event: InputRequestEvent) => void): () => void {
     this.inputRequestListeners.add(listener);
     return () => this.inputRequestListeners.delete(listener);
@@ -86,6 +92,35 @@ class PythonExecutorEngine {
   public async provideInput(value: string, requestId?: string, processId?: string): Promise<boolean> {
     try {
       const targetProcessId = processId || this.currentProcessId;
+      
+      // Try to use SharedArrayBuffer for true blocking input
+      if (this.sharedSignal && this.sharedData) {
+        try {
+          // Encode the input string to UTF-8
+          const encoder = new TextEncoder();
+          const encoded = encoder.encode(value);
+          
+          // Write length as uint32 (little-endian) to first 4 bytes
+          const lengthView = new DataView(this.sharedData.buffer);
+          lengthView.setUint32(0, encoded.length, true);
+          
+          // Write the UTF-8 bytes starting at offset 4
+          if (encoded.length <= 4092) {
+            this.sharedData.set(encoded, 4);
+          }
+          
+          // Signal the worker that input is ready
+          // Set signal to 1 and notify all waiters
+          Atomics.store(this.sharedSignal, 0, 1);
+          Atomics.notify(this.sharedSignal, 0);
+          
+          return true;
+        } catch (err) {
+          console.warn('[PythonExecutor] SharedArrayBuffer signaling failed, falling back to message:', err);
+        }
+      }
+      
+      // Fallback: use message-based communication
       if (this.worker) {
         this.worker.postMessage({
           type: 'INPUT_RESPONSE',
@@ -156,6 +191,17 @@ class PythonExecutorEngine {
             clearTimeout(this.activeTimeoutHandle);
             this.activeTimeoutHandle = null;
           }
+          
+          // Capture shared buffers if provided for true blocking input
+          if (payload?.sharedSignalBuffer) {
+            this.sharedSignalBuffer = payload.sharedSignalBuffer;
+            this.sharedSignal = new Int32Array(this.sharedSignalBuffer);
+          }
+          if (payload?.sharedDataBuffer) {
+            this.sharedDataBuffer = payload.sharedDataBuffer;
+            this.sharedData = new Uint8Array(this.sharedDataBuffer);
+          }
+          
           this.inputRequestListeners.forEach((fn) => fn(payload));
           return;
         }

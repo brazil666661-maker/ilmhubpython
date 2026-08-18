@@ -1,4 +1,5 @@
 // Dedicated Web Worker for Pyodide WebAssembly Python Execution (ES Module Worker)
+// Implements true blocking input() via SharedArrayBuffer + Atomics
 import { WorkerInMessage } from './types';
 import { sanitizePythonCode } from './sanitize';
 
@@ -7,6 +8,45 @@ let isLoading = false;
 let isReady = false;
 let currentProcessId: string | null = null;
 const pendingInputResolvers = new Map<string, (value: string) => void>();
+
+// Shared memory for input synchronization
+let sharedSignalBuffer: SharedArrayBuffer | null = null;
+let sharedDataBuffer: SharedArrayBuffer | null = null;
+let sharedSignal: Int32Array | null = null;
+let sharedData: Uint8Array | null = null;
+
+// Initialize shared buffers for cross-thread communication
+function initializeSharedBuffers() {
+  try {
+    // Signal buffer: 1 Int32 (index 0 holds the wait/notify signal)
+    sharedSignalBuffer = new SharedArrayBuffer(4);
+    sharedSignal = new Int32Array(sharedSignalBuffer);
+    sharedSignal[0] = 0; // 0 = waiting for input, 1 = input ready
+
+    // Data buffer: 4096 bytes (first 4 bytes = length, rest = UTF-8 string)
+    sharedDataBuffer = new SharedArrayBuffer(4096);
+    sharedData = new Uint8Array(sharedDataBuffer);
+    // Initialize with zeros
+    sharedData.fill(0);
+  } catch (err) {
+    console.warn('[Pyodide Worker] SharedArrayBuffer not available:', err);
+    // Fall back to message-based communication
+  }
+}
+
+// Export shared buffers to Python
+function exposeSharedBuffersToPython(py: any) {
+  if (!sharedSignalBuffer || !sharedDataBuffer) {
+    return;
+  }
+
+  try {
+    py.globals.set('_ilmhub_shared_signal', sharedSignalBuffer);
+    py.globals.set('_ilmhub_shared_data', sharedDataBuffer);
+  } catch (err) {
+    console.warn('[Pyodide Worker] Could not expose buffers to Python:', err);
+  }
+}
 
 export function buildRunnerScript(options: {
   filename: string;
@@ -72,22 +112,23 @@ class _ILMHUBInputWrapper:
         return '\\n'.join(values)
 
 
-async def _ilmhub_input(prompt=''):
-    global stdin_index
+def _ilmhub_blocking_input(prompt=''):
+    \"\"\"
+    True blocking input() using SharedArrayBuffer + Atomics.
+    This pauses the Python interpreter until the user provides input.
+    \"\"\"
     prompt_str = str(prompt) if prompt is not None else ''
-    if stdin_index < len(stdin_lines):
-        value = stdin_lines[stdin_index]
-        stdin_index += 1
-        return value
-    if hasattr(js, '_ilmhub_request_input'):
-        value = await js._ilmhub_request_input(prompt_str)
-        return '' if value is None else str(value)
+    
+    # Request input from main thread
+    js._ilmhub_request_blocking_input(prompt_str)
+    
+    # Wait for signal that input is ready (Atomics.wait is truly blocking)
+    if hasattr(js, '_ilmhub_atomics_wait_for_input'):
+        input_value = js._ilmhub_atomics_wait_for_input()
+        return '' if input_value is None else str(input_value)
+    
     return ''
 
-
-def _ilmhub_sync_input(prompt=''):
-    loop = asyncio.get_event_loop()
-    return loop.run_until_complete(_ilmhub_input(prompt))
 
 stdout_buffer = _ILMHUBStream('stdout')
 stderr_buffer = _ILMHUBStream('stderr')
@@ -100,13 +141,13 @@ sys.stderr = stderr_buffer
 sys.stdin = _ILMHUBInputWrapper(stdin_lines)
 
 _builtins_input = builtins.input
-builtins.input = _ilmhub_sync_input
+builtins.input = _ilmhub_blocking_input
 
 _user_globals = {
     '__name__': '__main__',
     '__file__': '/workspace/${filename}',
     '__doc__': None,
-    'input': _ilmhub_sync_input,
+    'input': _ilmhub_blocking_input,
     'print': print,
 }
 
@@ -240,29 +281,86 @@ async function runPython(payload: any, messageId?: string) {
   currentProcessId = payload.processId || `proc_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
   try {
+    // Initialize shared buffers for true blocking input
+    initializeSharedBuffers();
+
     const py = await initPyodide();
 
-    const requestInput = (promptText: string) => {
-      return new Promise<string>((resolve) => {
-        const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-        const safePrompt = promptText !== undefined && promptText !== null ? String(promptText) : '';
-        pendingInputResolvers.set(requestId, resolve);
-        self.postMessage({
-          type: 'INPUT_REQUEST',
-          payload: {
-            requestId,
-            prompt: safePrompt,
-            processId: currentProcessId,
-          },
-        });
+    // Expose shared buffers to Python
+    exposeSharedBuffersToPython(py);
+
+    let buffersSentToMain = false;
+
+    // Define JS functions that Python will call for blocking input
+    const requestBlockingInput = (promptText: string) => {
+      const payload: any = {
+        prompt: promptText,
+        processId: currentProcessId,
+      };
+
+      // Send shared buffers on first INPUT_REQUEST
+      if (!buffersSentToMain && sharedSignalBuffer && sharedDataBuffer) {
+        payload.sharedSignalBuffer = sharedSignalBuffer;
+        payload.sharedDataBuffer = sharedDataBuffer;
+        buffersSentToMain = true;
+      }
+
+      self.postMessage({
+        type: 'INPUT_REQUEST',
+        payload,
       });
     };
 
-    (self as any)._ilmhub_request_input = requestInput;
+    // Atomics-based wait function: blocks until main thread signals with input
+    const atomicsWaitForInput = (): string => {
+      if (!sharedSignal || !sharedData) {
+        // Fallback: no SharedArrayBuffer support
+        console.warn('[Pyodide Worker] SharedArrayBuffer not available for true blocking input');
+        return '';
+      }
+
+      try {
+        // Reset signal to 0 (waiting)
+        Atomics.store(sharedSignal, 0, 0);
+
+        // Wait for main thread to set signal to 1 (input ready)
+        // This truly blocks the worker thread without freezing the main thread
+        Atomics.wait(sharedSignal, 0, 0);
+
+        // Signal received; read input from shared data buffer
+        const lengthBytes = sharedData.slice(0, 4);
+        const lengthView = new DataView(lengthBytes.buffer);
+        const inputLength = lengthView.getUint32(0, true); // little-endian
+
+        if (inputLength > 0 && inputLength <= 4092) {
+          const inputBytes = sharedData.slice(4, 4 + inputLength);
+          const decoder = new TextDecoder('utf-8');
+          const inputValue = decoder.decode(inputBytes);
+          return inputValue;
+        }
+
+        return '';
+      } catch (err) {
+        console.warn('[Pyodide Worker] Atomics.wait error:', err);
+        return '';
+      }
+    };
+
+    // Expose input functions to Python
+    (self as any)._ilmhub_request_blocking_input = requestBlockingInput;
+    (self as any)._ilmhub_atomics_wait_for_input = atomicsWaitForInput;
+
+    try {
+      py.globals.set('_ilmhub_request_blocking_input', requestBlockingInput);
+      py.globals.set('_ilmhub_atomics_wait_for_input', atomicsWaitForInput);
+    } catch {
+      // ignore
+    }
 
     try {
       py.registerJsModule('ilmhub_bridge', {
-        request_input: (promptStr: string) => requestInput(promptStr),
+        request_blocking_input: requestBlockingInput,
+        atomics_wait_for_input: atomicsWaitForInput,
       });
     } catch {
       // ignore if bridge already exists
