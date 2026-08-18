@@ -15,6 +15,7 @@ export function buildRunnerScript(options: {
 
   return `
 import ast
+import builtins
 import io
 import os
 import sys
@@ -34,6 +35,7 @@ class _ILMHUBStream(io.TextIOBase):
     def __init__(self, stream_name):
         self.stream_name = stream_name
         self._buffer = []
+
     def write(self, text):
         value = '' if text is None else str(text)
         if not value:
@@ -41,10 +43,34 @@ class _ILMHUBStream(io.TextIOBase):
         self._buffer.append(value)
         js._ilmhub_emit_output(self.stream_name, value)
         return len(value)
+
     def flush(self):
         pass
+
     def getvalue(self):
         return ''.join(self._buffer)
+
+
+class _ILMHUBInputWrapper:
+    def __init__(self, stdin_lines, request_input_func):
+        self.stdin_lines = list(stdin_lines)
+        self.stdin_index = 0
+        self.request_input_func = request_input_func
+
+    def readline(self):
+        if self.stdin_index < len(self.stdin_lines):
+            value = self.stdin_lines[self.stdin_index]
+            self.stdin_index += 1
+            return value + '\n'
+        return ''
+
+    def read(self):
+        values = []
+        while self.stdin_index < len(self.stdin_lines):
+            values.append(self.stdin_lines[self.stdin_index])
+            self.stdin_index += 1
+        return '\n'.join(values)
+
 
 async def _ilmhub_input(prompt=''):
     global stdin_index
@@ -106,8 +132,14 @@ stdout_buffer = _ILMHUBStream('stdout')
 stderr_buffer = _ILMHUBStream('stderr')
 _orig_stdout = sys.stdout
 _orig_stderr = sys.stderr
+_orig_stdin = sys.stdin
+
 sys.stdout = stdout_buffer
 sys.stderr = stderr_buffer
+sys.stdin = _ILMHUBInputWrapper(stdin_lines, _ilmhub_input)
+
+_builtins_input = builtins.input
+builtins.input = _ilmhub_input
 
 with open('/workspace/${filename}', 'r', encoding='utf-8') as _f:
     _source = _f.read()
@@ -116,6 +148,9 @@ _user_globals = {
     '__name__': '__main__',
     '__file__': '/workspace/${filename}',
     '__doc__': None,
+    '_ilmhub_input': _ilmhub_input,
+    'input': _ilmhub_input,
+    'print': print,
 }
 
 _transformed = _rewrite_input_calls(_source)
@@ -133,8 +168,10 @@ except BaseException as _e:
     _ilmhub_exit_code = 1
     _ilmhub_traceback = traceback.format_exc()
 finally:
+    builtins.input = _builtins_input
     sys.stdout = _orig_stdout
     sys.stderr = _orig_stderr
+    sys.stdin = _orig_stdin
 
 _ilmhub_stdout = stdout_buffer.getvalue()
 _ilmhub_stderr = stderr_buffer.getvalue()
