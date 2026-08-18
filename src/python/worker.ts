@@ -1,5 +1,6 @@
 // Dedicated Web Worker for Pyodide WebAssembly Python Execution (ES Module Worker)
 import { WorkerInMessage } from './types';
+import { sanitizePythonCode } from './sanitize';
 
 let pyodideInstance: any = null;
 let isLoading = false;
@@ -51,22 +52,22 @@ class _ILMHUBStream(io.TextIOBase):
 
 
 class _ILMHUBInputWrapper:
-    def __init__(self, stdin_lines):
-        self.stdin_lines = list(stdin_lines)
-        self.stdin_index = 0
+    def __init__(self, lines):
+        self.lines = list(lines)
+        self.index = 0
 
     def readline(self):
-        if self.stdin_index < len(self.stdin_lines):
-            value = self.stdin_lines[self.stdin_index]
-            self.stdin_index += 1
+        if self.index < len(self.lines):
+            value = self.lines[self.index]
+            self.index += 1
             return value + '\n'
         return ''
 
     def read(self):
         values = []
-        while self.stdin_index < len(self.stdin_lines):
-            values.append(self.stdin_lines[self.stdin_index])
-            self.stdin_index += 1
+        while self.index < len(self.lines):
+            values.append(self.lines[self.index])
+            self.index += 1
         return '\n'.join(values)
 
 
@@ -102,7 +103,6 @@ _user_globals = {
     '__name__': '__main__',
     '__file__': '/workspace/${filename}',
     '__doc__': None,
-    '_ilmhub_input': _ilmhub_input,
     'input': _ilmhub_input,
     'print': print,
 }
@@ -111,7 +111,7 @@ _ilmhub_exit_code = 0
 _ilmhub_traceback = ''
 
 try:
-    exec(compile(_source, '${filename}', 'exec'), _user_globals)
+    exec(compile(_source, '${filename}', 'exec', dont_inherit=True), _user_globals, _user_globals)
 except SystemExit as _e:
     _ilmhub_exit_code = _e.code if _e.code is not None else 0
     if isinstance(_ilmhub_exit_code, str):
@@ -280,6 +280,9 @@ async function runPython(payload: any, messageId?: string) {
     }
 
     py.FS.writeFile(`/workspace/${filename}`, targetCode, { encoding: 'utf8' });
+
+    const safeSourceCode = sanitizePythonCode(targetCode);
+    py.FS.writeFile(`/workspace/${filename}`, safeSourceCode, { encoding: 'utf8' });
 
     const runnerScript = buildRunnerScript({ filename, stdinText });
 

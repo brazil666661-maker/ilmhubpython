@@ -1,5 +1,6 @@
 import { ExecutionRequest, ExecutionResponse, AppLanguage, ParsedPythonError } from '../types';
 import { parsePythonTraceback } from '../utils/errorParser';
+import { sanitizePythonCode } from './sanitize';
 
 export interface InputRequestEvent {
   requestId: string;
@@ -394,11 +395,13 @@ class PythonExecutorEngine {
         }
       }, timeoutMs);
 
+      const safeCode = sanitizePythonCode(req.code || '');
+
       worker.postMessage({
         type: 'RUN',
         id: processId,
         payload: {
-          code: req.code,
+          code: safeCode,
           filename,
           files: req.files || [],
           stdin: req.stdin || '',
