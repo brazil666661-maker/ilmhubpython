@@ -111,6 +111,18 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
       if (onSaveShortcut) onSaveShortcut();
     });
+
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyZ, () => {
+      editor.trigger('keyboard', 'undo', null);
+    });
+
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyZ, () => {
+      editor.trigger('keyboard', 'redo', null);
+    });
+
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyY, () => {
+      editor.trigger('keyboard', 'redo', null);
+    });
   };
 
   // Update Error Markers on Monaco Editor
@@ -201,7 +213,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
             : 'border-slate-200 bg-slate-100'
         }`}
       >
-        <div className="flex items-center space-x-1 overflow-x-auto scrollbar-none py-1">
+        <div className="flex items-center space-x-1 overflow-x-auto no-scrollbar py-1">
           {files.map((file) => {
             const isActive = file.id === activeFileId;
             const hasError = error && error.file === file.name;
