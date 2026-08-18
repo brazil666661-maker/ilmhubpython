@@ -14,7 +14,6 @@ export function buildRunnerScript(options: {
   const { filename, stdinText } = options;
 
   return `
-import ast
 import builtins
 import io
 import os
@@ -52,10 +51,9 @@ class _ILMHUBStream(io.TextIOBase):
 
 
 class _ILMHUBInputWrapper:
-    def __init__(self, stdin_lines, request_input_func):
+    def __init__(self, stdin_lines):
         self.stdin_lines = list(stdin_lines)
         self.stdin_index = 0
-        self.request_input_func = request_input_func
 
     def readline(self):
         if self.stdin_index < len(self.stdin_lines):
@@ -84,50 +82,6 @@ async def _ilmhub_input(prompt=''):
         return '' if value is None else str(value)
     return ''
 
-
-def _rewrite_input_calls(source):
-    tree = ast.parse(source, filename='${filename}', mode='exec')
-
-    class InputTransformer(ast.NodeTransformer):
-        def visit_Call(self, node):
-            node = self.generic_visit(node)
-            if isinstance(node.func, ast.Name) and node.func.id == 'input':
-                return ast.Await(
-                    value=ast.Call(
-                        func=ast.Name(id='_ilmhub_input', ctx=ast.Load()),
-                        args=node.args,
-                        keywords=node.keywords,
-                    )
-                )
-            return node
-
-    transformed = InputTransformer().visit(tree)
-    ast.fix_missing_locations(transformed)
-
-    wrap_module = ast.Module(
-        body=[
-            ast.AsyncFunctionDef(
-                name='_ilmhub_user_main',
-                args=ast.arguments(
-                    posonlyargs=[],
-                    args=[],
-                    vararg=None,
-                    kwonlyargs=[],
-                    kw_defaults=[],
-                    kwarg=None,
-                    defaults=[],
-                ),
-                body=transformed.body,
-                decorator_list=[],
-                returns=None,
-                type_comment=None,
-            )
-        ],
-        type_ignores=[],
-    )
-    ast.fix_missing_locations(wrap_module)
-    return ast.unparse(wrap_module)
-
 stdout_buffer = _ILMHUBStream('stdout')
 stderr_buffer = _ILMHUBStream('stderr')
 _orig_stdout = sys.stdout
@@ -136,7 +90,7 @@ _orig_stdin = sys.stdin
 
 sys.stdout = stdout_buffer
 sys.stderr = stderr_buffer
-sys.stdin = _ILMHUBInputWrapper(stdin_lines, _ilmhub_input)
+sys.stdin = _ILMHUBInputWrapper(stdin_lines)
 
 _builtins_input = builtins.input
 builtins.input = _ilmhub_input
@@ -153,13 +107,11 @@ _user_globals = {
     'print': print,
 }
 
-_transformed = _rewrite_input_calls(_source)
-exec(compile(_transformed, '${filename}', 'exec'), _user_globals)
 _ilmhub_exit_code = 0
 _ilmhub_traceback = ''
 
 try:
-    await _user_globals['_ilmhub_user_main']()
+    exec(compile(_source, '${filename}', 'exec'), _user_globals)
 except SystemExit as _e:
     _ilmhub_exit_code = _e.code if _e.code is not None else 0
     if isinstance(_ilmhub_exit_code, str):
