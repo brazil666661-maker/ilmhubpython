@@ -59,6 +59,7 @@ export default function App() {
   const [isCompactLayout, setIsCompactLayout] = useState<boolean>(() =>
     typeof window !== 'undefined' ? window.innerWidth < 768 : false
   );
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // App Settings & Theme & Language (Persisted)
   const [settings, setSettings] = useState<AppSettings>(() => {
@@ -475,6 +476,25 @@ export default function App() {
     showToast(`${t.saved} (${timeStr})`, 'success');
   };
 
+  const handleOpenFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const content = await file.text();
+    const safeName = file.name || 'untitled.py';
+    const newId = `file_${Date.now()}`;
+    const newFile: FileItem = {
+      id: newId,
+      name: safeName,
+      content,
+    };
+
+    setFiles((prev) => [...prev, newFile]);
+    setActiveFileId(newId);
+    showToast(`Opened ${safeName}`, 'success');
+    event.target.value = '';
+  };
+
   // Download .py File
   const handleDownloadCode = () => {
     const blob = new Blob([activeFile.content], { type: 'text/x-python;charset=utf-8' });
@@ -579,6 +599,10 @@ export default function App() {
         e.preventDefault();
         handleSaveCode();
       }
+      // Ctrl/Cmd + Z / Y should be left for Monaco undo/redo in editor
+      if ((e.ctrlKey || e.metaKey) && ['z', 'y'].includes(e.key.toLowerCase())) {
+        return;
+      }
       // Ctrl/Cmd + K to Clear Terminal
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
         e.preventDefault();
@@ -611,7 +635,15 @@ export default function App() {
   }
 
   return (
-    <div
+    <>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".py,.txt,.md,.json,.csv,.yaml,.yml"
+        className="hidden"
+        onChange={handleOpenFile}
+      />
+      <div
       id="ilmhub-app-root"
       className={`flex flex-col h-dvh w-full max-w-full overflow-hidden font-sans transition-colors duration-150 ${
         theme === 'dark' ? 'bg-[#071A2F] text-slate-100' : 'bg-slate-100 text-slate-900'
@@ -636,6 +668,7 @@ export default function App() {
         onClear={handleClearEditor}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenLanding={() => setCurrentView('landing')}
+        onOpenFile={() => fileInputRef.current?.click()}
         currentFilename={activeFile.name}
         terminalPosition={effectiveTerminalPosition}
         onChangeTerminalPosition={handleChangeTerminalPosition}
@@ -976,5 +1009,6 @@ export default function App() {
         onDismiss={(id) => setToasts((prev) => prev.filter((t) => t.id !== id))}
       />
     </div>
+    </>
   );
 }

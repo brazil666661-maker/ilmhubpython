@@ -30,6 +30,7 @@ interface HeaderProps {
   onRun: () => void;
   onStop: () => void;
   onSave: () => void;
+  onOpenFile?: () => void;
   lastSavedTime: string | null;
   onDownload: () => void;
   onCopy: () => void;
@@ -51,6 +52,7 @@ export const Header: React.FC<HeaderProps> = ({
   onRun,
   onStop,
   onSave,
+  onOpenFile,
   lastSavedTime,
   onDownload,
   onCopy,
@@ -204,6 +206,20 @@ export const Header: React.FC<HeaderProps> = ({
               isDark ? 'border-[#1E3A5F]' : 'border-slate-200'
             }`}
           >
+            <button
+              id="ilmhub-open-btn"
+              onClick={onOpenFile}
+              className={`flex items-center space-x-1 rounded-md px-2.5 py-1.5 text-xs transition ${
+                isDark
+                  ? 'text-slate-300 hover:bg-[#0B2747] hover:text-white'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+              title="Open file"
+            >
+              <Download className="h-3.5 w-3.5" />
+              <span className="hidden lg:inline">{t.openFile}</span>
+            </button>
+
             <button
               id="ilmhub-save-btn"
               onClick={onSave}
@@ -536,6 +552,21 @@ export const Header: React.FC<HeaderProps> = ({
                 <span>{language === 'uz' ? 'ILMHUB Haqida' : language === 'uz-cyrl' ? 'ILMHUB Ҳақида' : language === 'ru' ? 'О проекте ILMHUB' : 'About ILMHUB'}</span>
               </button>
             )}
+
+            <button
+              onClick={() => {
+                onOpenFile?.();
+                setIsMobileMenuOpen(false);
+              }}
+              className={`flex items-center space-x-2 rounded-lg border p-2.5 text-xs ${
+                isDark
+                  ? 'border-[#1E3A5F] bg-[#0B2747] text-slate-200'
+                  : 'border-slate-200 bg-slate-50 text-slate-700'
+              }`}
+            >
+              <Download className="h-4 w-4 text-blue-500" />
+              <span>{t.openFile}</span>
+            </button>
 
             <button
               onClick={() => {

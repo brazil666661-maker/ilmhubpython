@@ -111,6 +111,18 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
       if (onSaveShortcut) onSaveShortcut();
     });
+
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyZ, () => {
+      editor.trigger('keyboard', 'undo', null);
+    });
+
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyZ, () => {
+      editor.trigger('keyboard', 'redo', null);
+    });
+
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyY, () => {
+      editor.trigger('keyboard', 'redo', null);
+    });
   };
 
   // Update Error Markers on Monaco Editor
