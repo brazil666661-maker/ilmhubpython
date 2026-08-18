@@ -4,6 +4,7 @@ export interface FileItem {
   content: string;
   isModified?: boolean;
   isMain?: boolean;
+  lastAccessed?: number;
 }
 
 export interface ParsedPythonError {
