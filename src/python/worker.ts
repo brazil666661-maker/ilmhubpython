@@ -7,6 +7,143 @@ let isReady = false;
 let currentProcessId: string | null = null;
 const pendingInputResolvers = new Map<string, (value: string) => void>();
 
+export function buildRunnerScript(options: {
+  filename: string;
+  stdinText: string;
+}) {
+  const { filename, stdinText } = options;
+
+  return `
+import ast
+import io
+import os
+import sys
+import traceback
+import js
+
+os.chdir('/workspace')
+if '/workspace' not in sys.path:
+    sys.path.insert(0, '/workspace')
+
+stdin_lines = ${JSON.stringify(stdinText)}.splitlines()
+if ${JSON.stringify(stdinText)} == '':
+    stdin_lines = []
+stdin_index = 0
+
+class _ILMHUBStream(io.TextIOBase):
+    def __init__(self, stream_name):
+        self.stream_name = stream_name
+        self._buffer = []
+    def write(self, text):
+        value = '' if text is None else str(text)
+        if not value:
+            return 0
+        self._buffer.append(value)
+        js._ilmhub_emit_output(self.stream_name, value)
+        return len(value)
+    def flush(self):
+        pass
+    def getvalue(self):
+        return ''.join(self._buffer)
+
+async def _ilmhub_input(prompt=''):
+    global stdin_index
+    prompt_str = str(prompt) if prompt is not None else ''
+    if stdin_index < len(stdin_lines):
+        value = stdin_lines[stdin_index]
+        stdin_index += 1
+        return value
+    if hasattr(js, '_ilmhub_request_input'):
+        value = await js._ilmhub_request_input(prompt_str)
+        return '' if value is None else str(value)
+    return ''
+
+
+def _rewrite_input_calls(source):
+    tree = ast.parse(source, filename='${filename}', mode='exec')
+
+    class InputTransformer(ast.NodeTransformer):
+        def visit_Call(self, node):
+            node = self.generic_visit(node)
+            if isinstance(node.func, ast.Name) and node.func.id == 'input':
+                return ast.Await(
+                    value=ast.Call(
+                        func=ast.Name(id='_ilmhub_input', ctx=ast.Load()),
+                        args=node.args,
+                        keywords=node.keywords,
+                    )
+                )
+            return node
+
+    transformed = InputTransformer().visit(tree)
+    ast.fix_missing_locations(transformed)
+
+    wrap_module = ast.Module(
+        body=[
+            ast.AsyncFunctionDef(
+                name='_ilmhub_user_main',
+                args=ast.arguments(
+                    posonlyargs=[],
+                    args=[],
+                    vararg=None,
+                    kwonlyargs=[],
+                    kw_defaults=[],
+                    kwarg=None,
+                    defaults=[],
+                ),
+                body=transformed.body,
+                decorator_list=[],
+                returns=None,
+                type_comment=None,
+            )
+        ],
+        type_ignores=[],
+    )
+    ast.fix_missing_locations(wrap_module)
+    return ast.unparse(wrap_module)
+
+stdout_buffer = _ILMHUBStream('stdout')
+stderr_buffer = _ILMHUBStream('stderr')
+_orig_stdout = sys.stdout
+_orig_stderr = sys.stderr
+sys.stdout = stdout_buffer
+sys.stderr = stderr_buffer
+
+with open('/workspace/${filename}', 'r', encoding='utf-8') as _f:
+    _source = _f.read()
+
+_user_globals = {
+    '__name__': '__main__',
+    '__file__': '/workspace/${filename}',
+    '__doc__': None,
+}
+
+_transformed = _rewrite_input_calls(_source)
+exec(compile(_transformed, '${filename}', 'exec'), _user_globals)
+_ilmhub_exit_code = 0
+_ilmhub_traceback = ''
+
+try:
+    await _user_globals['_ilmhub_user_main']()
+except SystemExit as _e:
+    _ilmhub_exit_code = _e.code if _e.code is not None else 0
+    if isinstance(_ilmhub_exit_code, str):
+        _ilmhub_exit_code = 1
+except BaseException as _e:
+    _ilmhub_exit_code = 1
+    _ilmhub_traceback = traceback.format_exc()
+finally:
+    sys.stdout = _orig_stdout
+    sys.stderr = _orig_stderr
+
+_ilmhub_stdout = stdout_buffer.getvalue()
+_ilmhub_stderr = stderr_buffer.getvalue()
+_ilmhub_raw_stderr = _ilmhub_stderr
+if _ilmhub_traceback:
+    _ilmhub_raw_stderr = (_ilmhub_raw_stderr + '\\n' + _ilmhub_traceback).strip()
+`;
+}
+
 function emitWorkerText(type: 'STDOUT' | 'STDERR', text: string, processId?: string) {
   if (!text) return;
   self.postMessage({
@@ -155,135 +292,7 @@ async function runPython(payload: any, messageId?: string) {
 
     py.FS.writeFile(`/workspace/${filename}`, targetCode, { encoding: 'utf8' });
 
-    const runnerScript = `
-import ast
-import io
-import os
-import sys
-import traceback
-import js
-
-os.chdir('/workspace')
-if '/workspace' not in sys.path:
-    sys.path.insert(0, '/workspace')
-
-stdin_lines = ${JSON.stringify(stdinText)}.splitlines()
-if ${JSON.stringify(stdinText)} == '':
-    stdin_lines = []
-stdin_index = 0
-
-class _ILMHUBStream(io.TextIOBase):
-    def __init__(self, stream_name):
-        self.stream_name = stream_name
-        self._buffer = []
-    def write(self, text):
-        value = '' if text is None else str(text)
-        if not value:
-            return 0
-        self._buffer.append(value)
-        js._ilmhub_emit_output(self.stream_name, value)
-        return len(value)
-    def flush(self):
-        pass
-    def getvalue(self):
-        return ''.join(self._buffer)
-
-async def _ilmhub_input(prompt=''):
-    global stdin_index
-    prompt_str = str(prompt) if prompt is not None else ''
-    if stdin_index < len(stdin_lines):
-        value = stdin_lines[stdin_index]
-        stdin_index += 1
-        return value
-    if hasattr(js, '_ilmhub_request_input'):
-        value = await js._ilmhub_request_input(prompt_str)
-        return '' if value is None else str(value)
-    return ''
-
-
-def _rewrite_input_calls(source):
-    tree = ast.parse(source, filename='${filename}', mode='exec')
-
-    class InputTransformer(ast.NodeTransformer):
-        def visit_Call(self, node):
-            node = self.generic_visit(node)
-            if isinstance(node.func, ast.Name) and node.func.id == 'input':
-                return ast.Await(
-                    value=ast.Call(
-                        func=ast.Name(id='_ilmhub_input', ctx=ast.Load()),
-                        args=node.args,
-                        keywords=node.keywords,
-                    )
-                )
-            return node
-
-    transformed = InputTransformer().visit(tree)
-    ast.fix_missing_locations(transformed)
-
-    wrap_module = ast.Module(
-        body=[
-            ast.AsyncFunctionDef(
-                name='_ilmhub_user_main',
-                args=ast.arguments(
-                    posonlyargs=[],
-                    args=[],
-                    vararg=None,
-                    kwonlyargs=[],
-                    kw_defaults=[],
-                    kwarg=None,
-                    defaults=[],
-                ),
-                body=transformed.body,
-                decorator_list=[],
-                returns=None,
-                type_comment=None,
-            )
-        ],
-        type_ignores=[],
-    )
-    ast.fix_missing_locations(wrap_module)
-    return ast.unparse(wrap_module)
-
-stdout_buffer = _ILMHUBStream('stdout')
-stderr_buffer = _ILMHUBStream('stderr')
-_orig_stdout = sys.stdout
-_orig_stderr = sys.stderr
-sys.stdout = stdout_buffer
-sys.stderr = stderr_buffer
-
-with open('/workspace/${filename}', 'r', encoding='utf-8') as _f:
-    _source = _f.read()
-
-_user_globals = {
-    '__name__': '__main__',
-    '__file__': '/workspace/${filename}',
-    '__doc__': None,
-}
-
-_transformed = _rewrite_input_calls(_source)
-exec(compile(_transformed, '${filename}', 'exec'), _user_globals)
-_ilmhub_exit_code = 0
-_ilmhub_traceback = ''
-
-try:
-    await _user_globals['_ilmhub_user_main']()
-except SystemExit as _e:
-    _ilmhub_exit_code = _e.code if _e.code is not None else 0
-    if isinstance(_ilmhub_exit_code, str):
-        _ilmhub_exit_code = 1
-except BaseException as _e:
-    _ilmhub_exit_code = 1
-    _ilmhub_traceback = traceback.format_exc()
-finally:
-    sys.stdout = _orig_stdout
-    sys.stderr = _orig_stderr
-
-_ilmhub_stdout = stdout_buffer.getvalue()
-_ilmhub_stderr = stderr_buffer.getvalue()
-_ilmhub_raw_stderr = _ilmhub_stderr
-if _ilmhub_traceback:
-    _ilmhub_raw_stderr = (_ilmhub_raw_stderr + '\n' + _ilmhub_traceback).strip()
-`;
+    const runnerScript = buildRunnerScript({ filename, stdinText });
 
     const emitProxy = (kind: 'stdout' | 'stderr', text: string) => {
       emitWorkerText(kind === 'stdout' ? 'STDOUT' : 'STDERR', text, currentProcessId || undefined);
@@ -355,38 +364,40 @@ if _ilmhub_traceback:
   }
 }
 
-self.addEventListener('message', async (e: MessageEvent<WorkerInMessage>) => {
-  const { type, payload, id } = e.data;
+if (typeof self !== 'undefined') {
+  self.addEventListener('message', async (e: MessageEvent<WorkerInMessage>) => {
+    const { type, payload, id } = e.data;
 
-  switch (type) {
-    case 'INIT':
-      try {
-        await initPyodide();
-      } catch {
-        // already reported in initPyodide
-      }
-      break;
+    switch (type) {
+      case 'INIT':
+        try {
+          await initPyodide();
+        } catch {
+          // already reported in initPyodide
+        }
+        break;
 
-    case 'RUN':
-      await runPython(payload, id);
-      break;
+      case 'RUN':
+        await runPython(payload, id);
+        break;
 
-    case 'INPUT_RESPONSE':
-      resolveInputResponse((payload as any)?.requestId, (payload as any)?.processId, (payload as any)?.value);
-      self.postMessage({
-        type: 'INPUT_RESOLVED',
-        payload: {
-          requestId: (payload as any)?.requestId,
-          processId: (payload as any)?.processId,
-          value: (payload as any)?.value ?? '',
-        },
-      });
-      break;
+      case 'INPUT_RESPONSE':
+        resolveInputResponse((payload as any)?.requestId, (payload as any)?.processId, (payload as any)?.value);
+        self.postMessage({
+          type: 'INPUT_RESOLVED',
+          payload: {
+            requestId: (payload as any)?.requestId,
+            processId: (payload as any)?.processId,
+            value: (payload as any)?.value ?? '',
+          },
+        });
+        break;
 
-    case 'CANCEL':
-      break;
+      case 'CANCEL':
+        break;
 
-    default:
-      console.warn('[Pyodide Worker] Unknown message type:', type);
-  }
-});
+      default:
+        console.warn('[Pyodide Worker] Unknown message type:', type);
+    }
+  });
+}
