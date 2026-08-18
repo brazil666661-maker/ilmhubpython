@@ -1,32 +1,38 @@
 // Dedicated Web Worker for Pyodide WebAssembly Python Execution (ES Module Worker)
-import { parsePythonTraceback } from '../utils/errorParser';
 import { WorkerInMessage } from './types';
 
 let pyodideInstance: any = null;
 let isLoading = false;
 let isReady = false;
+let currentProcessId: string | null = null;
+const pendingInputResolvers = new Map<string, (value: string) => void>();
 
-// Initialize Pyodide inside the ES Module worker
+function emitWorkerText(type: 'STDOUT' | 'STDERR', text: string, processId?: string) {
+  if (!text) return;
+  self.postMessage({
+    type,
+    payload: { text, processId: processId || currentProcessId || null },
+  });
+}
+
 async function initPyodide(): Promise<any> {
   if (pyodideInstance) return pyodideInstance;
   if (isLoading) {
     while (isLoading) {
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await new Promise((resolve) => setTimeout(resolve, 25));
     }
     return pyodideInstance;
   }
 
   isLoading = true;
+
   try {
     let loadPyodideFn: any;
-
-    // Load Pyodide via ES Module (.mjs)
     try {
-      // @ts-ignore
       const pyodideModule = await import('https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.mjs');
       loadPyodideFn = pyodideModule.loadPyodide;
     } catch (esmErr) {
-      console.warn('[Pyodide Worker] ESM CDN import fallback check:', esmErr);
+      console.warn('[Pyodide Worker] ESM import fallback check:', esmErr);
       if (typeof (self as any).loadPyodide === 'function') {
         loadPyodideFn = (self as any).loadPyodide;
       }
@@ -40,12 +46,23 @@ async function initPyodide(): Promise<any> {
       indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.26.4/full/',
     });
 
-    // Prepare virtual workspace directory
     try {
       pyodideInstance.FS.mkdir('/workspace');
     } catch {
-      // Directory might already exist
+      // ignore
     }
+
+    const pythonVersion = typeof pyodideInstance.version === 'string' && pyodideInstance.version
+      ? pyodideInstance.version
+      : 'Python 3.x';
+
+    self.postMessage({
+      type: 'RUNTIME_INFO',
+      payload: {
+        pythonVersion,
+        pyodideVersion: '0.26.4',
+      },
+    });
 
     isReady = true;
     self.postMessage({ type: 'READY' });
@@ -62,7 +79,24 @@ async function initPyodide(): Promise<any> {
   }
 }
 
-// Execute Python code in worker
+function resolveInputResponse(requestId?: string, processId?: string, value?: string) {
+  const nextValue = value ?? '';
+  if (requestId && pendingInputResolvers.has(requestId)) {
+    const resolver = pendingInputResolvers.get(requestId)!;
+    pendingInputResolvers.delete(requestId);
+    resolver(nextValue);
+    return;
+  }
+
+  if (processId) {
+    for (const [id, resolver] of pendingInputResolvers.entries()) {
+      pendingInputResolvers.delete(id);
+      resolver(nextValue);
+      return;
+    }
+  }
+}
+
 async function runPython(payload: any, messageId?: string) {
   const startTime = Date.now();
   const filename = payload.filename || 'main.py';
@@ -71,72 +105,43 @@ async function runPython(payload: any, messageId?: string) {
   const stdinText = payload.stdin || '';
   const maxOutputSize = payload.maxOutputSize || 1024 * 1024;
   const lang = payload.lang || 'en';
-  const procId = payload.processId || `proc_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  currentProcessId = payload.processId || `proc_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
   try {
     const py = await initPyodide();
 
-    // Expose synchronous interactive input provider to Pyodide
-    (self as any)._ilmhub_worker_input = (promptText: string) => {
-      const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-      const safePrompt = promptText !== undefined && promptText !== null ? String(promptText) : '';
-
-      // Post notification to main thread so UI can display interactive prompt and focus input
-      self.postMessage({
-        type: 'INPUT_REQUEST',
-        payload: {
-          requestId,
-          prompt: safePrompt,
-          processId: procId,
-        },
+    const requestInput = (promptText: string) => {
+      return new Promise<string>((resolve) => {
+        const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        const safePrompt = promptText !== undefined && promptText !== null ? String(promptText) : '';
+        pendingInputResolvers.set(requestId, resolve);
+        self.postMessage({
+          type: 'INPUT_REQUEST',
+          payload: {
+            requestId,
+            prompt: safePrompt,
+            processId: currentProcessId,
+          },
+        });
       });
-
-      // Synchronous XMLHttpRequest to wait for user input
-      try {
-        const xhr = new XMLHttpRequest();
-        const url = `/api/worker-input/wait?requestId=${encodeURIComponent(requestId)}&prompt=${encodeURIComponent(safePrompt)}&processId=${encodeURIComponent(procId)}`;
-        xhr.open('GET', url, false); // Synchronous call in Web Worker
-        xhr.send(null);
-
-        if (xhr.status === 200) {
-          const resp = JSON.parse(xhr.responseText);
-          const userVal = resp.value !== undefined ? String(resp.value) : '';
-          self.postMessage({
-            type: 'INPUT_RESOLVED',
-            payload: {
-              requestId,
-              value: userVal,
-              processId: procId,
-            },
-          });
-          return userVal;
-        }
-      } catch (err) {
-        console.warn('[Pyodide Worker] Synchronous input request error:', err);
-      }
-
-      return '';
     };
 
-    // Register JS module in Pyodide for bridge access
+    (self as any)._ilmhub_request_input = requestInput;
+
     try {
       py.registerJsModule('ilmhub_bridge', {
-        request_input: (promptStr: string) => {
-          return (self as any)._ilmhub_worker_input(promptStr);
-        },
+        request_input: (promptStr: string) => requestInput(promptStr),
       });
     } catch {
-      // module might already be registered
+      // ignore if bridge already exists
     }
 
-    // Mount workspace files
     try {
       py.FS.mkdir('/workspace');
     } catch {
       // ignore
     }
 
-    // Write all auxiliary files to /workspace
     for (const f of auxFiles) {
       if (f.name) {
         const safeName = f.name.replace(/^[/\\]+/, '');
@@ -148,182 +153,208 @@ async function runPython(payload: any, messageId?: string) {
       }
     }
 
-    // Write primary file
     py.FS.writeFile(`/workspace/${filename}`, targetCode, { encoding: 'utf8' });
 
-    // Build the execution runner wrapper in Python
     const runnerScript = `
-import sys
+import ast
 import io
 import os
-import builtins
+import sys
 import traceback
 import js
 
-# Setup workspace environment
 os.chdir('/workspace')
 if '/workspace' not in sys.path:
     sys.path.insert(0, '/workspace')
 
-# Capture buffers
-_ilmhub_stdout = io.StringIO()
-_ilmhub_stderr = io.StringIO()
+stdin_lines = ${JSON.stringify(stdinText)}.splitlines()
+if ${JSON.stringify(stdinText)} == '':
+    stdin_lines = []
+stdin_index = 0
+
+class _ILMHUBStream(io.TextIOBase):
+    def __init__(self, stream_name):
+        self.stream_name = stream_name
+        self._buffer = []
+    def write(self, text):
+        value = '' if text is None else str(text)
+        if not value:
+            return 0
+        self._buffer.append(value)
+        js._ilmhub_emit_output(self.stream_name, value)
+        return len(value)
+    def flush(self):
+        pass
+    def getvalue(self):
+        return ''.join(self._buffer)
+
+async def _ilmhub_input(prompt=''):
+    global stdin_index
+    prompt_str = str(prompt) if prompt is not None else ''
+    if stdin_index < len(stdin_lines):
+        value = stdin_lines[stdin_index]
+        stdin_index += 1
+        return value
+    if hasattr(js, '_ilmhub_request_input'):
+        value = await js._ilmhub_request_input(prompt_str)
+        return '' if value is None else str(value)
+    return ''
+
+
+def _rewrite_input_calls(source):
+    tree = ast.parse(source, filename='${filename}', mode='exec')
+
+    class InputTransformer(ast.NodeTransformer):
+        def visit_Call(self, node):
+            node = self.generic_visit(node)
+            if isinstance(node.func, ast.Name) and node.func.id == 'input':
+                return ast.Await(
+                    value=ast.Call(
+                        func=ast.Name(id='_ilmhub_input', ctx=ast.Load()),
+                        args=node.args,
+                        keywords=node.keywords,
+                    )
+                )
+            return node
+
+    transformed = InputTransformer().visit(tree)
+    ast.fix_missing_locations(transformed)
+
+    wrap_module = ast.Module(
+        body=[
+            ast.AsyncFunctionDef(
+                name='_ilmhub_user_main',
+                args=ast.arguments(
+                    posonlyargs=[],
+                    args=[],
+                    vararg=None,
+                    kwonlyargs=[],
+                    kw_defaults=[],
+                    kwarg=None,
+                    defaults=[],
+                ),
+                body=transformed.body,
+                decorator_list=[],
+                returns=None,
+                type_comment=None,
+            )
+        ],
+        type_ignores=[],
+    )
+    ast.fix_missing_locations(wrap_module)
+    return ast.unparse(wrap_module)
+
+stdout_buffer = _ILMHUBStream('stdout')
+stderr_buffer = _ILMHUBStream('stderr')
 _orig_stdout = sys.stdout
 _orig_stderr = sys.stderr
-sys.stdout = _ilmhub_stdout
-sys.stderr = _ilmhub_stderr
+sys.stdout = stdout_buffer
+sys.stderr = stderr_buffer
 
-# Stdin buffer handler
-_ilmhub_stdin_lines = ${JSON.stringify(stdinText)}.split('\\n')
-if ${JSON.stringify(stdinText)} == "":
-    _ilmhub_stdin_lines = []
-_ilmhub_stdin_index = 0
+with open('/workspace/${filename}', 'r', encoding='utf-8') as _f:
+    _source = _f.read()
 
-def _ilmhub_custom_input(prompt=""):
-    global _ilmhub_stdin_index
-    prompt_str = str(prompt) if prompt is not None else ""
-    if prompt_str:
-        sys.stdout.write(prompt_str)
-        sys.stdout.flush()
-    
-    # 1. Use pre-provided stdin buffer if available
-    if _ilmhub_stdin_index < len(_ilmhub_stdin_lines):
-        val = _ilmhub_stdin_lines[_ilmhub_stdin_index]
-        _ilmhub_stdin_index += 1
-        sys.stdout.write(val + "\\n")
-        sys.stdout.flush()
-        return val
+_user_globals = {
+    '__name__': '__main__',
+    '__file__': '/workspace/${filename}',
+    '__doc__': None,
+}
 
-    # 2. Interactive synchronous input via Web Worker / Server bridge
-    try:
-        if hasattr(js, '_ilmhub_worker_input'):
-            val = str(js._ilmhub_worker_input(prompt_str))
-            sys.stdout.write(val + "\\n")
-            sys.stdout.flush()
-            return val
-    except Exception:
-        pass
-
-    try:
-        import ilmhub_bridge
-        val = str(ilmhub_bridge.request_input(prompt_str))
-        sys.stdout.write(val + "\\n")
-        sys.stdout.flush()
-        return val
-    except Exception:
-        pass
-
-    return ""
-
-builtins.input = _ilmhub_custom_input
-
+_transformed = _rewrite_input_calls(_source)
+exec(compile(_transformed, '${filename}', 'exec'), _user_globals)
 _ilmhub_exit_code = 0
-_ilmhub_exception = None
-_ilmhub_traceback = ""
+_ilmhub_traceback = ''
 
 try:
-    with open('/workspace/${filename}', 'r', encoding='utf-8') as _f:
-        _code_to_exec = _f.read()
-    
-    # Execute code in clean global namespace
-    _user_globals = {
-        '__name__': '__main__',
-        '__file__': '/workspace/${filename}',
-        '__doc__': None,
-    }
-    exec(compile(_code_to_exec, '${filename}', 'exec'), _user_globals)
+    await _user_globals['_ilmhub_user_main']()
 except SystemExit as _e:
     _ilmhub_exit_code = _e.code if _e.code is not None else 0
     if isinstance(_ilmhub_exit_code, str):
-        _ilmhub_stderr.write(str(_ilmhub_exit_code) + '\\n')
         _ilmhub_exit_code = 1
 except BaseException as _e:
     _ilmhub_exit_code = 1
-    _ilmhub_exception = _e
     _ilmhub_traceback = traceback.format_exc()
 finally:
     sys.stdout = _orig_stdout
     sys.stderr = _orig_stderr
 
-_ilmhub_raw_stdout = _ilmhub_stdout.getvalue()
-_ilmhub_raw_stderr = _ilmhub_stderr.getvalue()
+_ilmhub_stdout = stdout_buffer.getvalue()
+_ilmhub_stderr = stderr_buffer.getvalue()
+_ilmhub_raw_stderr = _ilmhub_stderr
 if _ilmhub_traceback:
-    if _ilmhub_raw_stderr:
-        _ilmhub_raw_stderr += "\\n" + _ilmhub_traceback
-    else:
-        _ilmhub_raw_stderr = _ilmhub_traceback
+    _ilmhub_raw_stderr = (_ilmhub_raw_stderr + '\n' + _ilmhub_traceback).strip()
 `;
+
+    const emitProxy = (kind: 'stdout' | 'stderr', text: string) => {
+      emitWorkerText(kind === 'stdout' ? 'STDOUT' : 'STDERR', text, currentProcessId || undefined);
+    };
+    (self as any)._ilmhub_emit_output = (kind: string, text: string) => {
+      emitProxy(kind === 'stdout' ? 'stdout' : 'stderr', text);
+    };
+
+    try {
+      py.globals.set('_ilmhub_emit_output', (self as any)._ilmhub_emit_output);
+    } catch {
+      // ignore
+    }
 
     await py.runPythonAsync(runnerScript);
 
-    let stdoutStr: string = py.globals.get('_ilmhub_raw_stdout') || '';
-    let stderrStr: string = py.globals.get('_ilmhub_raw_stderr') || '';
-    let exitCode: number = py.globals.get('_ilmhub_exit_code');
+    const stdoutStr = String(py.globals.get('_ilmhub_stdout') || '');
+    const stderrStr = String(py.globals.get('_ilmhub_stderr') || '');
+    const exitCode = Number(py.globals.get('_ilmhub_exit_code') ?? 0);
+    const tracebackText = String(py.globals.get('_ilmhub_traceback') || '');
+    const finalStderr = (tracebackText ? `${stderrStr}\n${tracebackText}` : stderrStr).trim();
+    const finalStdout = stdoutStr.length > maxOutputSize ? stdoutStr.slice(0, maxOutputSize) : stdoutStr;
 
-    if (exitCode === undefined || exitCode === null) {
-      exitCode = 0;
-    }
-
-    // Output truncation check
-    let outputTruncated = false;
-    if (stdoutStr.length > maxOutputSize) {
-      stdoutStr = stdoutStr.substring(0, maxOutputSize);
-      outputTruncated = true;
-      stderrStr += `\n[ILMHUB]: Output limit of ${(maxOutputSize / 1024).toFixed(0)}KB reached. Output was truncated.`;
-    }
-
-    const durationSec = Math.max((Date.now() - startTime) / 1000, 0.01);
-
-    // Parse traceback if any error occurred
-    let parsedError = null;
-    if (stderrStr.trim() || exitCode !== 0) {
-      parsedError = parsePythonTraceback(stderrStr || stdoutStr, filename, lang);
-    }
-
-    const isSuccess = exitCode === 0 && !parsedError;
-
-    const result = {
-      success: isSuccess,
-      stdout: stdoutStr,
-      stderr: stderrStr,
+    const result: any = {
+      success: exitCode === 0 && !finalStderr,
+      stdout: finalStdout,
+      stderr: finalStderr,
       exit_code: exitCode,
-      execution_time: Number(durationSec.toFixed(3)),
-      error: parsedError,
+      execution_time: Number(((Date.now() - startTime) / 1000).toFixed(3)),
+      error: null,
       timed_out: false,
       cancelled: false,
-      output_truncated: outputTruncated,
-      processId: payload.processId,
+      processId: currentProcessId,
     };
 
-    self.postMessage({
-      type: 'RESULT',
-      id: messageId,
-      payload: result,
-    });
-  } catch (err: any) {
-    const durationSec = Math.max((Date.now() - startTime) / 1000, 0.01);
-    const errText = err?.message || String(err);
-    const parsedError = parsePythonTraceback(errText, filename, lang);
+    if (finalStderr || exitCode !== 0) {
+      result.error = {
+        type: 'RuntimeError',
+        message: finalStderr || 'Python execution failed',
+        file: filename,
+        line: 1,
+        traceback: finalStderr || 'Python execution failed',
+      };
+    }
 
+    if (finalStdout.length > maxOutputSize) {
+      result.stderr = `${result.stderr || ''}\n[ILMHUB]: Output limit of ${(maxOutputSize / 1024).toFixed(0)}KB reached. Output was truncated.`;
+      result.output_truncated = true;
+    }
+
+    self.postMessage({ type: 'RESULT', id: messageId, payload: result });
+  } catch (err: any) {
+    const errorText = err?.message || String(err);
     self.postMessage({
       type: 'RESULT',
       id: messageId,
       payload: {
         success: false,
         stdout: '',
-        stderr: errText,
+        stderr: errorText,
         exit_code: 1,
-        execution_time: Number(durationSec.toFixed(3)),
-        error: parsedError,
+        execution_time: Number(((Date.now() - startTime) / 1000).toFixed(3)),
+        error: { type: 'RuntimeError', message: errorText, file: filename, line: 1, traceback: errorText },
         timed_out: false,
         cancelled: false,
-        processId: payload.processId,
+        processId: currentProcessId,
       },
     });
   }
 }
 
-// Handle incoming messages from the main thread
 self.addEventListener('message', async (e: MessageEvent<WorkerInMessage>) => {
   const { type, payload, id } = e.data;
 
@@ -331,8 +362,8 @@ self.addEventListener('message', async (e: MessageEvent<WorkerInMessage>) => {
     case 'INIT':
       try {
         await initPyodide();
-      } catch (err) {
-        // logged above
+      } catch {
+        // already reported in initPyodide
       }
       break;
 
@@ -340,8 +371,19 @@ self.addEventListener('message', async (e: MessageEvent<WorkerInMessage>) => {
       await runPython(payload, id);
       break;
 
+    case 'INPUT_RESPONSE':
+      resolveInputResponse((payload as any)?.requestId, (payload as any)?.processId, (payload as any)?.value);
+      self.postMessage({
+        type: 'INPUT_RESOLVED',
+        payload: {
+          requestId: (payload as any)?.requestId,
+          processId: (payload as any)?.processId,
+          value: (payload as any)?.value ?? '',
+        },
+      });
+      break;
+
     case 'CANCEL':
-      // Handled via worker termination in PythonExecutor
       break;
 
     default:

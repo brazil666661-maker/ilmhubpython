@@ -11,6 +11,7 @@ interface StatusBarProps {
   cursorCol: number;
   language: AppLanguage;
   theme?: AppTheme;
+  runtimeVersion?: string;
 }
 
 export const StatusBar: React.FC<StatusBarProps> = ({
@@ -21,6 +22,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   cursorCol,
   language,
   theme = 'dark',
+  runtimeVersion = 'Python 3.x',
 }) => {
   const t = getLocale(language);
   const isDark = theme === 'dark';
@@ -96,7 +98,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
               : 'bg-white text-sky-700 border-slate-200 shadow-xs'
           }`}
         >
-          {t.pythonVersion}
+          {runtimeVersion || t.pythonVersion}
         </span>
       </div>
     </div>

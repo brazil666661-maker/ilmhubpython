@@ -99,6 +99,7 @@ export default function App() {
   const [terminalEntries, setTerminalEntries] = useState<TerminalEntry[]>([]);
   const [parsedError, setParsedError] = useState<ParsedPythonError | null>(null);
   const [currentProcessId, setCurrentProcessId] = useState<string | null>(null);
+  const [runtimeVersion, setRuntimeVersion] = useState<string>(PythonExecutor.getRuntimeVersion());
 
   // Interactive input state
   const [isWaitingForInput, setIsWaitingForInput] = useState(false);
@@ -203,6 +204,18 @@ export default function App() {
 
   // Listen to interactive Python input requests from Web Worker
   useEffect(() => {
+    const unsubRuntime = PythonExecutor.onRuntimeInfo((evt) => setRuntimeVersion(evt.pythonVersion));
+    const unsubOut = PythonExecutor.onOutput((evt) => {
+      setTerminalEntries((prev) => [
+        ...prev,
+        {
+          id: `out_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+          type: evt.type,
+          text: evt.text,
+          timestamp: new Date().toLocaleTimeString(),
+        },
+      ]);
+    });
     const unsubReq = PythonExecutor.onInputRequest((evt) => {
       setIsWaitingForInput(true);
       setPendingPrompt(evt.prompt || '');
@@ -229,6 +242,8 @@ export default function App() {
     });
 
     return () => {
+      unsubRuntime();
+      unsubOut();
       unsubReq();
       unsubRes();
     };
@@ -904,6 +919,7 @@ export default function App() {
         cursorCol={cursorCol}
         language={language}
         theme={theme}
+        runtimeVersion={runtimeVersion}
       />
 
       {/* Modals & Dialogs */}

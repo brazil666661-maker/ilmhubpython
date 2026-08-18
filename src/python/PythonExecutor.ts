@@ -13,19 +13,29 @@ export interface InputResolvedEvent {
   processId: string;
 }
 
+export interface OutputEvent {
+  type: 'stdout' | 'stderr';
+  text: string;
+  processId?: string;
+}
+
+export interface RuntimeInfoEvent {
+  pythonVersion: string;
+  pyodideVersion: string;
+}
+
 class PythonExecutorEngine {
   private worker: Worker | null = null;
-  private isInitializing = false;
   private activeReject: ((reason?: any) => void) | null = null;
   private activeResolve: ((value: ExecutionResponse) => void) | null = null;
   private activeTimeoutHandle: any = null;
   private currentProcessId: string | null = null;
   private inputRequestListeners: Set<(event: InputRequestEvent) => void> = new Set();
   private inputResolvedListeners: Set<(event: InputResolvedEvent) => void> = new Set();
-
-  constructor() {
-    // Lazily initialize worker
-  }
+  private outputListeners: Set<(event: OutputEvent) => void> = new Set();
+  private runtimeInfoListeners: Set<(event: RuntimeInfoEvent) => void> = new Set();
+  private runtimeVersion = 'Python 3.x';
+  private workerReadyPromise: Promise<void> | null = null;
 
   public onInputRequest(listener: (event: InputRequestEvent) => void): () => void {
     this.inputRequestListeners.add(listener);
@@ -37,15 +47,63 @@ class PythonExecutorEngine {
     return () => this.inputResolvedListeners.delete(listener);
   }
 
+  public onOutput(listener: (event: OutputEvent) => void): () => void {
+    this.outputListeners.add(listener);
+    return () => this.outputListeners.delete(listener);
+  }
+
+  public onRuntimeInfo(listener: (event: RuntimeInfoEvent) => void): () => void {
+    this.runtimeInfoListeners.add(listener);
+    return () => this.runtimeInfoListeners.delete(listener);
+  }
+
+  public getRuntimeVersion(): string {
+    return this.runtimeVersion;
+  }
+
+  public async waitForWorkerReady(): Promise<void> {
+    if (!this.worker) {
+      this.getWorker();
+    }
+    if (!this.workerReadyPromise) {
+      this.workerReadyPromise = new Promise((resolve) => {
+        const onReady = (event: MessageEvent) => {
+          if (event.data?.type === 'READY') {
+            this.worker!.removeEventListener('message', onReady as EventListener);
+            resolve();
+          }
+        };
+        if (this.worker) {
+          this.worker.addEventListener('message', onReady as EventListener);
+          this.worker.postMessage({ type: 'INIT' });
+        }
+      });
+    }
+    await this.workerReadyPromise;
+  }
+
   public async provideInput(value: string, requestId?: string, processId?: string): Promise<boolean> {
     try {
+      const targetProcessId = processId || this.currentProcessId;
+      if (this.worker) {
+        this.worker.postMessage({
+          type: 'INPUT_RESPONSE',
+          payload: {
+            requestId,
+            processId: targetProcessId || undefined,
+            value,
+          },
+        });
+        return true;
+      }
+
       const resp = await fetch('/api/worker-input/provide', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           value,
           requestId,
-          processId: processId || this.currentProcessId,
+          processId: targetProcessId,
         }),
       });
       const data = await resp.json();
@@ -67,10 +125,32 @@ class PythonExecutorEngine {
       });
 
       this.worker.onmessage = (e: MessageEvent) => {
-        const { type, payload } = e.data;
+        const { type, payload } = e.data || {};
+
+        if (type === 'RUNTIME_INFO') {
+          const nextVersion = payload?.pythonVersion || 'Python 3.x';
+          this.runtimeVersion = nextVersion;
+          this.runtimeInfoListeners.forEach((fn) =>
+            fn({
+              pythonVersion: nextVersion,
+              pyodideVersion: payload?.pyodideVersion || '0.26.4',
+            })
+          );
+          return;
+        }
+
+        if (type === 'STDOUT' || type === 'STDERR') {
+          this.outputListeners.forEach((fn) =>
+            fn({
+              type: type === 'STDERR' ? 'stderr' : 'stdout',
+              text: String(payload?.text || ''),
+              processId: payload?.processId || this.currentProcessId || undefined,
+            })
+          );
+          return;
+        }
 
         if (type === 'INPUT_REQUEST') {
-          // Pause execution timeout while waiting for user input
           if (this.activeTimeoutHandle) {
             clearTimeout(this.activeTimeoutHandle);
             this.activeTimeoutHandle = null;
@@ -80,7 +160,6 @@ class PythonExecutorEngine {
         }
 
         if (type === 'INPUT_RESOLVED') {
-          // Restart timeout if needed
           if (!this.activeTimeoutHandle && this.activeResolve) {
             this.activeTimeoutHandle = setTimeout(() => {
               this.handleTimeout();
@@ -102,7 +181,10 @@ class PythonExecutorEngine {
             this.activeReject = null;
             resolve(payload);
           }
-        } else if (type === 'ERROR') {
+          return;
+        }
+
+        if (type === 'ERROR') {
           if (this.activeTimeoutHandle) {
             clearTimeout(this.activeTimeoutHandle);
             this.activeTimeoutHandle = null;
@@ -167,7 +249,7 @@ class PythonExecutorEngine {
     return this.worker;
   }
 
-  private handleTimeout(timeoutSec = 10, filename = 'main.py'): void {
+  private handleTimeout(timeoutSec = 30, filename = 'main.py'): void {
     if (!this.activeResolve) return;
     const processId = this.currentProcessId || 'default';
     this.terminateAndReset();
@@ -201,7 +283,9 @@ class PythonExecutorEngine {
   public preload(): void {
     try {
       const worker = this.getWorker();
-      worker.postMessage({ type: 'INIT' });
+      if (worker) {
+        worker.postMessage({ type: 'INIT' });
+      }
     } catch (e) {
       console.warn('[PythonExecutor] Preload failed:', e);
     }
@@ -226,7 +310,8 @@ class PythonExecutorEngine {
   }
 
   public cancel(processId?: string): boolean {
-    if (this.activeResolve) {
+    const targetProcessId = processId || this.currentProcessId;
+    if (this.activeResolve || this.worker) {
       const resolve = this.activeResolve;
       this.activeResolve = null;
       this.activeReject = null;
@@ -236,19 +321,25 @@ class PythonExecutorEngine {
         this.activeTimeoutHandle = null;
       }
 
+      if (this.worker) {
+        this.worker.postMessage({ type: 'CANCEL', payload: { processId: targetProcessId } });
+      }
+
       this.terminateAndReset();
 
-      resolve({
-        success: false,
-        stdout: '',
-        stderr: '^C Process cancelled by user.',
-        exit_code: 130,
-        execution_time: 0,
-        error: null,
-        cancelled: true,
-        timed_out: false,
-        processId: processId || this.currentProcessId || undefined,
-      });
+      if (resolve) {
+        resolve({
+          success: false,
+          stdout: '',
+          stderr: '^C Process cancelled by user.',
+          exit_code: 130,
+          execution_time: 0,
+          error: null,
+          cancelled: true,
+          timed_out: false,
+          processId: targetProcessId || undefined,
+        });
+      }
 
       return true;
     }
@@ -257,12 +348,11 @@ class PythonExecutorEngine {
 
   public async execute(req: ExecutionRequest, lang: AppLanguage = 'en'): Promise<ExecutionResponse> {
     const filename = req.filename || 'main.py';
-    const timeoutSec = req.timeout && req.timeout > 0 ? req.timeout : 10;
+    const timeoutSec = req.timeout && req.timeout > 0 ? req.timeout : 30;
     const timeoutMs = timeoutSec * 1000;
     const processId = req.processId || `proc_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     this.currentProcessId = processId;
 
-    // If an execution is already active, cancel it first
     if (this.activeResolve) {
       this.cancel();
     }
@@ -272,8 +362,6 @@ class PythonExecutorEngine {
       this.activeReject = reject;
 
       const worker = this.getWorker();
-
-      // Start client execution timeout
       this.activeTimeoutHandle = setTimeout(() => {
         console.warn(`[PythonExecutor] Execution timed out after ${timeoutSec}s`);
         this.terminateAndReset();
@@ -306,7 +394,6 @@ class PythonExecutorEngine {
         }
       }, timeoutMs);
 
-      // Post execution request to Web Worker
       worker.postMessage({
         type: 'RUN',
         id: processId,

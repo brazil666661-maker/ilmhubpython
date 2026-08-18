@@ -9,14 +9,28 @@ export interface PyodideRunOptions {
   lang?: 'en' | 'uz' | 'ru' | 'uz-cyrl';
 }
 
+export interface WorkerInputResponsePayload {
+  requestId?: string;
+  processId?: string;
+  value?: string;
+}
+
 export interface WorkerInMessage {
-  type: 'RUN' | 'INIT' | 'CANCEL';
-  payload?: PyodideRunOptions;
+  type: 'RUN' | 'INIT' | 'CANCEL' | 'INPUT_RESPONSE';
+  payload?: PyodideRunOptions | WorkerInputResponsePayload;
   id?: string;
 }
 
 export interface WorkerOutMessage {
-  type: 'READY' | 'STDOUT' | 'STDERR' | 'RESULT' | 'ERROR';
+  type:
+    | 'READY'
+    | 'STDOUT'
+    | 'STDERR'
+    | 'INPUT_REQUEST'
+    | 'INPUT_RESOLVED'
+    | 'RUNTIME_INFO'
+    | 'RESULT'
+    | 'ERROR';
   id?: string;
   payload?: any;
 }
