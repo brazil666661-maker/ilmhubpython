@@ -1,0 +1,8 @@
+{
+  "name": "Remix ILMHUB",
+  "description": "Online Python Code Editor with Real-Time Python Runner, Interactive Input/Output Terminal, Split Layouts, and Error Diagnostics",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
