@@ -67,6 +67,7 @@ export interface AppSettings {
   theme: AppTheme;
   fontSize: number;
   editorFont: string;
+  lineNumbers: boolean;
   wordWrap: boolean;
   minimap: boolean;
   autosave: boolean;

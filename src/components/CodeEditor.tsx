@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useMemo } from 'react';
 import Editor, { OnMount, BeforeMount } from '@monaco-editor/react';
 import {
   FileCode,
@@ -44,6 +44,8 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   const editorRef = useRef<any>(null);
   const monacoRef = useRef<any>(null);
   const decorationsRef = useRef<string[]>([]);
+  const lastEditorValueRef = useRef(activeFile.content);
+  const activeFileIdRef = useRef(activeFileId);
 
   // Configure custom themes in Monaco
   const handleBeforeMount: BeforeMount = (monaco) => {
@@ -95,6 +97,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   const handleEditorMount: OnMount = (editor, monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
+    lastEditorValueRef.current = editor.getValue();
 
     // Track Cursor Position
     editor.onDidChangeCursorPosition((e) => {
@@ -124,6 +127,30 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
       editor.trigger('keyboard', 'redo', null);
     });
   };
+
+  // Keep external file operations in sync without feeding normal typing back
+  // through Monaco's model and disturbing its cursor or undo history.
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    const fileWasSwitched = activeFileIdRef.current !== activeFileId;
+    activeFileIdRef.current = activeFileId;
+    if (fileWasSwitched) {
+      lastEditorValueRef.current = activeFile.content;
+      return;
+    }
+
+    const model = editor.getModel();
+    if (
+      model &&
+      model.getValue() !== activeFile.content &&
+      lastEditorValueRef.current !== activeFile.content
+    ) {
+      model.setValue(activeFile.content);
+      lastEditorValueRef.current = activeFile.content;
+    }
+  }, [activeFileId, activeFile.content]);
 
   // Update Error Markers on Monaco Editor
   useEffect(() => {
@@ -174,13 +201,13 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   }, [error, activeFile.name]);
 
   // Adjust options based on user settings
-  const editorOptions: any = {
+  const editorOptions: any = useMemo(() => ({
     fontSize: settings.fontSize || 14,
     fontFamily: settings.fontFamily || "'Fira Code', monospace",
     tabSize: settings.tabSize || 4,
     insertSpaces: true,
     wordWrap: settings.wordWrap ? 'on' : 'off',
-    lineNumbers: settings.lineNumbers ? 'on' : 'off',
+    lineNumbers: 'on',
     minimap: { enabled: settings.minimap },
     automaticLayout: true,
     scrollBeyondLastLine: false,
@@ -193,7 +220,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
     bracketPairColorization: { enabled: true },
     formatOnPaste: true,
     padding: { top: 12, bottom: 12 },
-  };
+  }), [settings]);
 
   const isDark = theme === 'dark';
   const currentTheme = isDark ? 'ilmhub-dark' : 'ilmhub-light';
@@ -319,11 +346,15 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
           width="100%"
           language="python"
           path={activeFile.name}
-          value={activeFile.content}
+          defaultValue={activeFile.content}
           theme={currentTheme}
           beforeMount={handleBeforeMount}
           onMount={handleEditorMount}
-          onChange={(value) => onCodeChange(value || '')}
+          onChange={(value) => {
+            const nextValue = value || '';
+            lastEditorValueRef.current = nextValue;
+            onCodeChange(nextValue);
+          }}
           options={editorOptions}
           loading={
             <div className="flex h-full w-full items-center justify-center bg-[#07111F] text-slate-400 text-xs font-mono">

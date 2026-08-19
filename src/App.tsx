@@ -36,6 +36,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
   fontSize: 14,
   editorFont: "'Fira Code', monospace",
+  lineNumbers: true,
   wordWrap: false,
   minimap: true,
   autosave: true,
@@ -137,6 +138,8 @@ export default function App() {
   const [lastSavedTime, setLastSavedTime] = useState<string | null>(null);
 
   const activeProcessRef = useRef<string | null>(null);
+  const executionLockRef = useRef(false);
+  const streamedOutputRef = useRef(new Map<string, { stdout: string; stderr: string }>());
   const workspaceRef = useRef<HTMLDivElement>(null);
 
   const showToast = useCallback((text: string, type: 'success' | 'error' | 'info' = 'info') => {
@@ -219,6 +222,13 @@ export default function App() {
   useEffect(() => {
     const unsubRuntime = PythonExecutor.onRuntimeInfo((evt) => setRuntimeVersion(evt.pythonVersion));
     const unsubOut = PythonExecutor.onOutput((evt) => {
+      const processId = evt.processId || activeProcessRef.current;
+      if (!processId || processId !== activeProcessRef.current) return;
+
+      const streamed = streamedOutputRef.current.get(processId) || { stdout: '', stderr: '' };
+      streamed[evt.type] += evt.text;
+      streamedOutputRef.current.set(processId, streamed);
+
       setTerminalEntries((prev) => [
         ...prev,
         {
@@ -315,7 +325,8 @@ export default function App() {
 
   // Run Python Code via Backend Execution API
   const handleRunCode = async (stdinOverride?: string) => {
-    if (executionState === 'running') return;
+    if (executionLockRef.current) return;
+    executionLockRef.current = true;
 
     // Automatically expand terminal on run
     setIsTerminalMinimized(false);
@@ -325,6 +336,7 @@ export default function App() {
     const procId = `proc_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     setCurrentProcessId(procId);
     activeProcessRef.current = procId;
+    streamedOutputRef.current.set(procId, { stdout: '', stderr: '' });
 
     const timeStr = new Date().toLocaleTimeString();
 
@@ -362,27 +374,40 @@ export default function App() {
 
       setLastResult(result);
 
-      // Append stdout lines
-      if (result.stdout) {
+      // Streaming already rendered the accumulated output. Only append data that
+      // the final response adds, such as a traceback generated after streaming.
+      const streamed = streamedOutputRef.current.get(procId) || { stdout: '', stderr: '' };
+      const appendFinalOnly = (value: string, streamedValue: string) => {
+        if (!value || value === streamedValue) return '';
+        if (value.startsWith(streamedValue)) return value.slice(streamedValue.length);
+        if (streamedValue && value.startsWith(streamedValue.trimEnd())) {
+          return value.slice(streamedValue.trimEnd().length).replace(/^\s+/, '');
+        }
+        return '';
+      };
+
+      const finalStdout = appendFinalOnly(result.stdout, streamed.stdout);
+      const finalStderr = appendFinalOnly(result.stderr, streamed.stderr);
+
+      if (finalStdout) {
         setTerminalEntries((prev) => [
           ...prev,
           {
             id: `out_${Date.now()}`,
             type: 'stdout',
-            text: result.stdout,
+            text: finalStdout,
             timestamp: timeStr,
           },
         ]);
       }
 
-      // Append stderr lines
-      if (result.stderr) {
+      if (finalStderr) {
         setTerminalEntries((prev) => [
           ...prev,
           {
             id: `err_${Date.now()}`,
             type: 'stderr',
-            text: result.stderr,
+            text: finalStderr,
             timestamp: timeStr,
           },
         ]);
@@ -453,6 +478,8 @@ export default function App() {
       ]);
     } finally {
       activeProcessRef.current = null;
+      streamedOutputRef.current.delete(procId);
+      executionLockRef.current = false;
       setCurrentProcessId(null);
     }
   };
@@ -589,13 +616,16 @@ export default function App() {
   // Global Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const isInsideEditor = Boolean(target?.closest('#ilmhub-code-editor-container'));
+
       // Ctrl/Cmd + Enter to Run
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      if (!isInsideEditor && (e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault();
         handleRunCode();
       }
       // Ctrl/Cmd + S to Save
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      if (!isInsideEditor && (e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
         handleSaveCode();
       }
