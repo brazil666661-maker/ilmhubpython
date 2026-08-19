@@ -8,6 +8,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { FileItem, ParsedPythonError, AppSettings, AppTheme } from '../types';
+import { getLocale } from '../locales';
 
 interface CodeEditorProps {
   files: FileItem[];
@@ -210,8 +211,8 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   // Adjust options based on user settings
   const editorOptions: any = useMemo(() => ({
     fontSize: settings.fontSize || 14,
-    fontFamily: settings.fontFamily || "'Fira Code', monospace",
-    tabSize: settings.tabSize || 4,
+    fontFamily: settings.editorFont || "'Fira Code', monospace",
+    tabSize: 4,
     insertSpaces: true,
     wordWrap: settings.wordWrap ? 'on' : 'off',
     lineNumbers: 'on',
@@ -222,6 +223,8 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
     cursorSmoothCaretAnimation: 'off',
     fontLigatures: false,
     cursorStyle: 'line',
+    direction: 'ltr',
+    unicodeHighlight: { ambiguousCharacters: false },
     letterSpacing: 0,
     smoothScrolling: true,
     renderLineHighlight: 'all',
@@ -299,7 +302,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
                         ? 'text-slate-400 hover:text-white hover:bg-[#1E3A5F]'
                         : 'text-slate-400 hover:text-slate-900 hover:bg-slate-200'
                     }`}
-                    title="Rename file"
+                    title={getLocale(settings.language).renameFile}
                   >
                     <Edit2 className="h-2.5 w-2.5" />
                   </button>
@@ -315,7 +318,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
                           ? 'text-slate-400 hover:text-rose-400 hover:bg-[#1E3A5F]'
                           : 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'
                       }`}
-                      title="Delete file"
+                      title={getLocale(settings.language).deleteFile}
                     >
                       <X className="h-2.5 w-2.5" />
                     </button>
@@ -334,7 +337,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
                 ? 'text-slate-400 hover:bg-[#0B2747] hover:text-white'
                 : 'text-slate-500 hover:bg-slate-200 hover:text-slate-900'
             }`}
-            title="Create New File"
+            title={getLocale(settings.language).newFile}
           >
             <Plus className="h-3.5 w-3.5" />
           </button>
@@ -346,12 +349,12 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
             isDark ? 'text-slate-400' : 'text-slate-500'
           }`}
         >
-          <span className="opacity-70 font-mono">Ctrl+Enter to Run</span>
+          <span className="opacity-70 font-mono">{getLocale(settings.language).runShortcutHint}</span>
         </div>
       </div>
 
       {/* Main Monaco Editor Body */}
-      <div className="flex-1 w-full relative overflow-hidden">
+      <div className="flex-1 w-full relative overflow-hidden" dir="ltr">
         <Editor
           height="100%"
           width="100%"
@@ -369,7 +372,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
           options={editorOptions}
           loading={
             <div className="flex h-full w-full items-center justify-center bg-[#07111F] text-slate-400 text-xs font-mono">
-              Loading Python Editor...
+              {getLocale(settings.language).codeEditorLoading}
             </div>
           }
         />

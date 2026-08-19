@@ -268,7 +268,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   />
                   <div className={`flex justify-between text-[10px] mt-1 ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
                     <span>10px</span>
-                    <span>14px (Default)</span>
+                    <span>14px ({t.defaultLabel})</span>
                     <span>24px</span>
                   </div>
                 </div>
@@ -377,7 +377,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         {t.layoutLeftShort || 'Left Split'}
                       </span>
                       <span className={`text-[10px] mt-0.5 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                        Terminal Left, Code Right
+                        {t.terminalLeftCodeRight}
                       </span>
                     </button>
 
@@ -406,7 +406,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         {t.layoutBottomShort || 'Down (Bottom)'}
                       </span>
                       <span className={`text-[10px] mt-0.5 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                        Code Top, Terminal Below
+                        {t.codeTopTerminalBelow}
                       </span>
                     </button>
 
@@ -435,7 +435,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         {t.layoutRightShort || 'Right Split'}
                       </span>
                       <span className={`text-[10px] mt-0.5 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                        Code Left, Terminal Right
+                        {t.codeLeftTerminalRight}
                       </span>
                     </button>
                   </div>
@@ -471,7 +471,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       {t.settingsModal.clearOnRun}
                     </span>
                     <p className={`text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                      Clear previous stdout before each execution
+                      {t.clearOutputHint}
                     </p>
                   </div>
                   <input
@@ -494,7 +494,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       {t.settingsModal.showTimestamps}
                     </span>
                     <p className={`text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                      Display timestamp markers next to logs
+                      {t.timestampsHint}
                     </p>
                   </div>
                   <input
@@ -531,7 +531,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     className="w-full accent-[#0284C7] dark:accent-[#FFD43B]"
                   />
                   <p className={`text-[11px] mt-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                    Safeguard against infinite loops (e.g. while True). Max 30 seconds.
+                    {t.timeoutHint}
                   </p>
                 </div>
 
@@ -554,7 +554,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     className="w-full accent-[#0284C7] dark:accent-[#FFD43B]"
                   />
                   <p className={`text-[11px] mt-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                    Maximum allowed terminal output buffer size.
+                    {t.outputBufferHint}
                   </p>
                 </div>
               </div>

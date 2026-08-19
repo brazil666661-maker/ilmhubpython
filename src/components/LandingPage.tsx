@@ -91,7 +91,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                   ? 'border-[#1E3A5F] bg-[#0B2747] text-slate-200 hover:bg-[#133863]'
                   : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
               }`}
-              title="Change Language"
+              title={t.changeLanguage}
             >
               <Globe className="h-3.5 w-3.5" />
               <span>{currentLangObj.flag}</span>
@@ -168,7 +168,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           }`}
         >
           <Zap className="h-3.5 w-3.5" />
-          <span>{t.appName}</span>
+          <span>{t.landing.releaseBadge}</span>
         </div>
 
         <h1
@@ -192,9 +192,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             isDark ? 'text-slate-300' : 'text-slate-600'
           }`}
         >
-          {t.landing.heroDescription.split('Run')[0]}
-          <strong>Run</strong>
-          {t.landing.heroDescription.split('Run')[1]}
+          {t.landing.heroDescription}
         </p>
 
         {/* Action Buttons */}
@@ -406,7 +404,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             : 'border-slate-200 text-slate-500 bg-white'
         }`}
       >
-        © 2026 ILMHUB. Online Python 3 IDE & Execution Engine.
+        © 2026 ILMHUB. {t.landing.footer}
       </footer>
     </div>
   );

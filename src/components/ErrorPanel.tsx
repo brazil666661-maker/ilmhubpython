@@ -83,7 +83,7 @@ export const ErrorPanel: React.FC<ErrorPanelProps> = ({
                 ? 'text-slate-400 hover:text-white hover:bg-[#1E3A5F]'
                 : 'text-slate-400 hover:text-slate-900 hover:bg-rose-100'
             }`}
-            title="Close Error Banner"
+            title={t.close}
           >
             <X className="h-4 w-4" />
           </button>

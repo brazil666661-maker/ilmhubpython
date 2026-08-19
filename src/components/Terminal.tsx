@@ -543,8 +543,8 @@ export const Terminal: React.FC<TerminalProps> = ({
             onChange={(e) => setStdinInput(e.target.value)}
             placeholder={
               isWaitingForInput
-                ? (pendingPrompt ? `${pendingPrompt} (type here & Enter)` : 'Python waiting for input: type and press Enter...')
-                : 'Type standard input (stdin), or cls/clear to clear terminal...'
+                ? (pendingPrompt ? `${pendingPrompt} (${t.sendInput})` : t.stdinWaiting)
+                : t.stdinPlaceholder
             }
             className={`flex-1 bg-transparent text-xs font-mono outline-none ${
               isDark
@@ -563,7 +563,7 @@ export const Terminal: React.FC<TerminalProps> = ({
                 ? 'text-slate-400 hover:text-[#FFD43B]'
                 : 'text-slate-500 hover:text-sky-600'
             }`}
-            title="Send Input (Enter)"
+            title={t.sendInput}
           >
             <CornerDownLeft className="h-3.5 w-3.5" />
           </button>

@@ -97,7 +97,7 @@ export const Header: React.FC<HeaderProps> = ({
             id="ilmhub-logo-btn"
             onClick={onOpenLanding}
             className="flex cursor-pointer items-center space-x-2 rounded-lg py-1 px-1.5 transition hover:opacity-90"
-            title="ILMHUB Home"
+            title={t.home}
           >
             <div
               className={`flex h-8 w-8 items-center justify-center rounded-lg border shadow-inner ${
@@ -164,7 +164,7 @@ export const Header: React.FC<HeaderProps> = ({
                   ? 'bg-[#FFD43B] hover:bg-[#ffe066] text-[#071A2F]'
                   : 'bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold'
               }`}
-              title="Run Python Code (Ctrl+Enter)"
+              title={`${t.run} (Ctrl+Enter)`}
             >
               <Play className="h-3.5 w-3.5 fill-current" />
               <span className="tracking-wide">
@@ -176,7 +176,7 @@ export const Header: React.FC<HeaderProps> = ({
               id="ilmhub-stop-button"
               onClick={onStop}
               className="flex items-center space-x-1.5 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-bold text-white shadow-md transition-all hover:bg-rose-500 active:scale-95 animate-pulse"
-              title="Stop Python Execution"
+              title={t.stop}
             >
               <Square className="h-3.5 w-3.5 fill-current" />
               <span>{t.stop}</span>
@@ -193,10 +193,10 @@ export const Header: React.FC<HeaderProps> = ({
                   ? 'border-[#1E3A5F] bg-[#0B2747] text-slate-200 hover:bg-[#133863] hover:text-[#FFD43B]'
                   : 'border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-900'
               }`}
-              title="About ILMHUB"
+              title={t.about}
             >
               <Info className={`h-3.5 w-3.5 ${isDark ? 'text-[#FFD43B]' : 'text-amber-600'}`} />
-              <span>{language === 'uz' ? 'Haqida' : language === 'uz-cyrl' ? 'Ҳақида' : language === 'ru' ? 'О проекте' : 'About'}</span>
+              <span>{t.about}</span>
             </button>
           )}
 
@@ -214,7 +214,7 @@ export const Header: React.FC<HeaderProps> = ({
                   ? 'text-slate-300 hover:bg-[#0B2747] hover:text-white'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`}
-              title="Open file"
+              title={t.openFile}
             >
               <Download className="h-3.5 w-3.5" />
               <span className="hidden lg:inline">{t.openFile}</span>
@@ -228,7 +228,7 @@ export const Header: React.FC<HeaderProps> = ({
                   ? 'text-slate-300 hover:bg-[#0B2747] hover:text-white'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`}
-              title="Save (Ctrl+S)"
+              title={`${t.save} (Ctrl+S)`}
             >
               <Save className="h-3.5 w-3.5" />
               <span className="hidden lg:inline">{t.save}</span>
@@ -242,7 +242,7 @@ export const Header: React.FC<HeaderProps> = ({
                   ? 'text-slate-300 hover:bg-[#0B2747] hover:text-white'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`}
-              title="Copy Code to Clipboard"
+              title={t.copy}
             >
               {isCopied ? (
                 <>
@@ -265,7 +265,7 @@ export const Header: React.FC<HeaderProps> = ({
                   ? 'text-slate-300 hover:bg-[#0B2747] hover:text-white'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`}
-              title="Download .py file"
+              title={t.download}
             >
               <Download className="h-3.5 w-3.5" />
               <span className="hidden lg:inline">{t.download}</span>
@@ -279,7 +279,7 @@ export const Header: React.FC<HeaderProps> = ({
                   ? 'text-slate-300 hover:bg-rose-950/40 hover:text-rose-300'
                   : 'text-slate-600 hover:bg-rose-50 hover:text-rose-600'
               }`}
-              title="Clear Editor"
+              title={t.clear}
             >
               <Trash2 className="h-3.5 w-3.5" />
               <span className="hidden lg:inline">{t.clear}</span>
@@ -366,7 +366,7 @@ export const Header: React.FC<HeaderProps> = ({
                   ? 'border-[#1E3A5F] bg-[#0B2747] text-slate-200 hover:bg-[#133863]'
                   : 'border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200'
               }`}
-              title="Change Language"
+              title={t.changeLanguage}
             >
               <Globe className={`h-3.5 w-3.5 ${isDark ? 'text-slate-400' : 'text-slate-500'}`} />
               <span>{currentLangObj.flag}</span>
@@ -549,7 +549,7 @@ export const Header: React.FC<HeaderProps> = ({
                 }`}
               >
                 <Info className={`h-4 w-4 ${isDark ? 'text-[#FFD43B]' : 'text-amber-600'}`} />
-                <span>{language === 'uz' ? 'ILMHUB Haqida' : language === 'uz-cyrl' ? 'ILMHUB Ҳақида' : language === 'ru' ? 'О проекте ILMHUB' : 'About ILMHUB'}</span>
+                <span>{t.appName} {t.about}</span>
               </button>
             )}
 
