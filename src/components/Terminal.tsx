@@ -544,7 +544,7 @@ export const Terminal: React.FC<TerminalProps> = ({
             placeholder={
               isWaitingForInput
                 ? (pendingPrompt ? `${pendingPrompt} (type here & Enter)` : 'Python waiting for input: type and press Enter...')
-                : 'Type standard input (stdin) and press Enter...'
+                : 'Type standard input (stdin), or cls/clear to clear terminal...'
             }
             className={`flex-1 bg-transparent text-xs font-mono outline-none ${
               isDark
