@@ -22,6 +22,7 @@ import { ConfirmDialog } from './components/ConfirmDialog';
 import { StatusBar } from './components/StatusBar';
 import { LandingPage } from './components/LandingPage';
 import { Toast, ToastMessage } from './components/Toast';
+import { FileNameDialog } from './components/FileNameDialog';
 import { PythonExecutor } from './python/PythonExecutor';
 
 const DEFAULT_CODE = `def main():
@@ -119,6 +120,11 @@ export default function App() {
   const [isTerminalMaximized, setIsTerminalMaximized] = useState(false);
   const [isTerminalMinimized, setIsTerminalMinimized] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [fileNameDialog, setFileNameDialog] = useState<{
+    isOpen: boolean;
+    fileId: string | null;
+    value: string;
+  }>({ isOpen: false, fileId: null, value: '' });
   const [confirmDialogState, setConfirmDialogState] = useState<{
     isOpen: boolean;
     title: string;
@@ -538,7 +544,7 @@ export default function App() {
 
     setFiles((prev) => [...prev, newFile]);
     setActiveFileId(newId);
-    showToast(`Opened ${safeName}`, 'success');
+    showToast(t.fileOpened(safeName), 'success');
     event.target.value = '';
   };
 
@@ -574,27 +580,35 @@ export default function App() {
       onConfirm: () => {
         handleCodeChange('');
         setConfirmDialogState((p) => ({ ...p, isOpen: false }));
-        showToast('Editor cleared', 'info');
+        showToast(t.editorCleared, 'info');
       },
     });
   };
 
   // Create New File
   const handleNewFile = () => {
-    const fileName = prompt(t.fileName + ' (e.g. utils.py):', `script_${files.length}.py`);
-    if (!fileName || !fileName.trim()) return;
+    setFileNameDialog({ isOpen: true, fileId: null, value: `script_${files.length}.py` });
+  };
 
-    const safeName = fileName.trim().endsWith('.py') ? fileName.trim() : `${fileName.trim()}.py`;
-    const newId = `file_${Date.now()}`;
-    const newFile: FileItem = {
-      id: newId,
-      name: safeName,
-      content: `# ${safeName}\n\n`,
-    };
+  const handleFileNameConfirm = () => {
+    const fileName = fileNameDialog.value.trim();
+    if (!fileName) return;
 
-    setFiles((prev) => [...prev, newFile]);
-    setActiveFileId(newId);
-    showToast(`Created ${safeName}`, 'success');
+    const safeName = fileName.endsWith('.py') ? fileName : `${fileName}.py`;
+    if (fileNameDialog.fileId) {
+      setFiles((prev) => prev.map((file) => (
+        file.id === fileNameDialog.fileId ? { ...file, name: safeName } : file
+      )));
+      showToast(t.fileRenamed(safeName), 'info');
+    } else {
+      const newId = `file_${Date.now()}`;
+      const newFile: FileItem = { id: newId, name: safeName, content: `# ${safeName}\n\n` };
+      setFiles((prev) => [...prev, newFile]);
+      setActiveFileId(newId);
+      showToast(t.fileCreated(safeName), 'success');
+    }
+
+    setFileNameDialog({ isOpen: false, fileId: null, value: '' });
   };
 
   // Rename File
@@ -602,14 +616,7 @@ export default function App() {
     const file = files.find((f) => f.id === fileId);
     if (!file) return;
 
-    const newName = prompt(t.renameFile + ':', file.name);
-    if (!newName || !newName.trim() || newName === file.name) return;
-
-    const safeName = newName.trim().endsWith('.py') ? newName.trim() : `${newName.trim()}.py`;
-    setFiles((prev) =>
-      prev.map((f) => (f.id === fileId ? { ...f, name: safeName } : f))
-    );
-    showToast(`Renamed to ${safeName}`, 'info');
+    setFileNameDialog({ isOpen: true, fileId, value: file.name });
   };
 
   // Delete File
@@ -620,7 +627,7 @@ export default function App() {
     setConfirmDialogState({
       isOpen: true,
       title: `${t.deleteFile} ${file.name}?`,
-      message: 'This file will be permanently deleted from the workspace.',
+      message: t.deleteFileDesc,
       isDestructive: true,
       onConfirm: () => {
         setFiles((prev) => prev.filter((f) => f.id !== fileId));
@@ -628,7 +635,7 @@ export default function App() {
           setActiveFileId(files[0].id);
         }
         setConfirmDialogState((p) => ({ ...p, isOpen: false }));
-        showToast(`Deleted ${file.name}`, 'info');
+        showToast(t.fileDeleted(file.name), 'info');
       },
     });
   };
@@ -662,6 +669,7 @@ export default function App() {
       if (e.key === 'Escape') {
         setIsSettingsOpen(false);
         setConfirmDialogState((p) => ({ ...p, isOpen: false }));
+        setFileNameDialog({ isOpen: false, fileId: null, value: '' });
       }
     };
 
@@ -1049,6 +1057,17 @@ export default function App() {
         isDestructive={confirmDialogState.isDestructive}
         onConfirm={confirmDialogState.onConfirm}
         onCancel={() => setConfirmDialogState((p) => ({ ...p, isOpen: false }))}
+        language={language}
+        theme={theme}
+      />
+
+      <FileNameDialog
+        isOpen={fileNameDialog.isOpen}
+        title={fileNameDialog.fileId ? t.renameFile : t.newFile}
+        value={fileNameDialog.value}
+        onChange={(value) => setFileNameDialog((prev) => ({ ...prev, value }))}
+        onConfirm={handleFileNameConfirm}
+        onCancel={() => setFileNameDialog({ isOpen: false, fileId: null, value: '' })}
         language={language}
         theme={theme}
       />

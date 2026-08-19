@@ -259,6 +259,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
               <div
                 key={file.id}
                 onClick={() => onSelectFile(file.id)}
+                onDoubleClick={() => onRenameFile(file.id)}
                 className={`group relative flex items-center space-x-2 rounded-t-md px-3 py-1.5 text-xs font-mono transition-all cursor-pointer border-t-2 ${
                   isActive
                     ? isDark
