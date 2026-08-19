@@ -1,6 +1,6 @@
 export const uzCyrl = {
-  appName: 'ILMHUB',
-  tagline: 'Онлайн Python код муҳаррири ва AI ёрдамчиси',
+  appName: 'Онлайн Python код муҳаррири',
+  tagline: '',
   run: 'Ишга тушириш',
   running: 'Бажарилмоқда...',
   stop: 'Тўхтатиш',
@@ -72,8 +72,9 @@ export const uzCyrl = {
   utf8: 'UTF-8',
   pythonVersion: 'Python 3.10',
   landing: {
-    heroTitle: 'Python ёзинг. Дарҳол бажаринг. Ақлли тузатинг.',
-    heroSubtitle: 'ILMHUB — реал Python бажариш тизими, интерактив терминал, ақлли хатолик таҳлили ва AI ёрдамчиси билан онлайн дастурлаш платформаси.',
+    heroTitle: 'Онлайн Python терминали',
+    heroSubtitle: 'Python кодини ёзинг. Дарҳол ишга туширинг.',
+    heroDescription: 'Ўқувчилар учун қулай онлайн Python муҳити. Код ёзинг ёки тайёр кодингизни жойланг, Run тугмасини босинг ва натижани дарҳол кўринг.',
     startCoding: 'Код ёзишни бошлаш',
     tryExample: 'Намунани синаб кўриш',
     featuresTitle: 'Python ўрганиш ва дастур яратиш учун барча имкониятлар',

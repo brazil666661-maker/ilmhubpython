@@ -74,6 +74,7 @@ export const en = {
   landing: {
     heroTitle: 'Write Python. Run Instantly. Fix Smarter.',
     heroSubtitle: 'ILMHUB is a browser-based Python coding environment with real backend execution, an interactive terminal, and intelligent error diagnosis.',
+    heroDescription: 'A convenient online Python environment for students. Write code or paste your ready-made code, click Run, and see the result immediately.',
     startCoding: 'Start Coding',
     tryExample: 'Try Example',
     featuresTitle: 'Everything you need to learn and build in Python',

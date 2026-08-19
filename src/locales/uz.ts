@@ -1,6 +1,6 @@
 export const uz = {
-  appName: 'ILMHUB',
-  tagline: 'Onlayn Python kod muharriri va AI yordamchisi',
+  appName: 'Onlayn Python kod muharriri',
+  tagline: '',
   run: 'Ishga tushirish',
   running: 'Bajarilmoqda...',
   stop: 'To‘xtatish',
@@ -72,8 +72,9 @@ export const uz = {
   utf8: 'UTF-8',
   pythonVersion: 'Python 3.10',
   landing: {
-    heroTitle: 'Python yozing. Darhol bajaring. Aqlli tuzating.',
-    heroSubtitle: 'ILMHUB — real Python bajarish tizimi, interaktiv terminal, aqlli xatolik tahlili va AI yordamchisi bilan onlayn dasturlash platformasi.',
+    heroTitle: 'Onlayn Python terminali',
+    heroSubtitle: 'Python kodini yozing. Darhol ishga tushiring.',
+    heroDescription: 'O‘quvchilar uchun qulay onlayn Python muhiti. Kod yozing yoki tayyor kodingizni joylang, Run tugmasini bosing va natijani darhol ko‘ring.',
     startCoding: 'Kod yozishni boshlash',
     tryExample: 'Namunani sinab ko‘rish',
     featuresTitle: 'Python o‘rganish va dastur yaratish uchun barcha imkoniyatlar',

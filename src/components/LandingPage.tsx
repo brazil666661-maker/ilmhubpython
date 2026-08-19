@@ -168,7 +168,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           }`}
         >
           <Zap className="h-3.5 w-3.5" />
-          <span>{`${t.appName} • ${t.tagline}`}</span>
+          <span>{t.appName}</span>
         </div>
 
         <h1
@@ -176,7 +176,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             isDark ? 'text-white' : 'text-slate-900'
           }`}
         >
-          {t.landing.heroTitle}
+          <strong>{t.landing.heroTitle}</strong>
         </h1>
 
         <p
@@ -185,6 +185,16 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           }`}
         >
           {t.landing.heroSubtitle}
+        </p>
+
+        <p
+          className={`mt-3 max-w-3xl text-sm sm:text-base leading-relaxed ${
+            isDark ? 'text-slate-300' : 'text-slate-600'
+          }`}
+        >
+          {t.landing.heroDescription.split('Run')[0]}
+          <strong>Run</strong>
+          {t.landing.heroDescription.split('Run')[1]}
         </p>
 
         {/* Action Buttons */}
