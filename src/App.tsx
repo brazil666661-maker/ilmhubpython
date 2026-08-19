@@ -328,6 +328,17 @@ export default function App() {
     if (executionLockRef.current) return;
     executionLockRef.current = true;
 
+    const code = activeFile.content;
+    if (!code.trim()) {
+      setExecutionState('idle');
+      setLastResult(null);
+      setParsedError(null);
+      setTerminalEntries([]);
+      setIsTerminalMinimized(false);
+      executionLockRef.current = false;
+      return;
+    }
+
     // Automatically expand terminal on run
     setIsTerminalMinimized(false);
     setExecutionState('running');
@@ -361,7 +372,7 @@ export default function App() {
 
       const result = await ApiService.runCode(
         {
-          code: activeFile.content,
+          code,
           filename: activeFile.name,
           files: auxFiles,
           stdin: stdinOverride,

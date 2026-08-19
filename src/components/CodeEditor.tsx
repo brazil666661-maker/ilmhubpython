@@ -46,6 +46,13 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   const decorationsRef = useRef<string[]>([]);
   const lastEditorValueRef = useRef(activeFile.content);
   const activeFileIdRef = useRef(activeFileId);
+  const runShortcutRef = useRef(onRunShortcut);
+  const saveShortcutRef = useRef(onSaveShortcut);
+
+  useEffect(() => {
+    runShortcutRef.current = onRunShortcut;
+    saveShortcutRef.current = onSaveShortcut;
+  }, [onRunShortcut, onSaveShortcut]);
 
   // Configure custom themes in Monaco
   const handleBeforeMount: BeforeMount = (monaco) => {
@@ -108,11 +115,11 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
 
     // Keyboard Shortcuts inside Monaco
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
-      if (onRunShortcut) onRunShortcut();
+      runShortcutRef.current?.();
     });
 
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
-      if (onSaveShortcut) onSaveShortcut();
+      saveShortcutRef.current?.();
     });
 
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyZ, () => {
@@ -213,6 +220,8 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
     scrollBeyondLastLine: false,
     cursorBlinking: 'smooth',
     cursorSmoothCaretAnimation: 'on',
+    fontLigatures: false,
+    cursorStyle: 'line',
     smoothScrolling: true,
     renderLineHighlight: 'all',
     suggestOnTriggerCharacters: true,
