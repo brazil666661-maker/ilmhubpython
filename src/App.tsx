@@ -291,6 +291,15 @@ export default function App() {
 
   // Interactive Stdin Handler
   const handleSendStdin = (stdinText: string) => {
+    const terminalCommand = stdinText.trim().toLowerCase();
+    if (!isWaitingForInput && executionState !== 'running' && ['cls', 'clear'].includes(terminalCommand)) {
+      setTerminalEntries([]);
+      setLastResult(null);
+      setParsedError(null);
+      setExecutionState('idle');
+      return;
+    }
+
     if (isWaitingForInput && pendingInputRef.current) {
       const req = pendingInputRef.current;
       PythonExecutor.provideInput(stdinText, req.requestId, req.processId);
